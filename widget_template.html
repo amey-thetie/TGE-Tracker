@@ -1,0 +1,454 @@
+<title>TGE Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --panel-2: #eceef1;
+    --line: #dde1e6;
+    --ink: #171b21;
+    --muted: #5b6472;
+    --accent: #6e56cf;
+    --live: #2f9e58;
+    --dormant: #1d8c86;
+    --pending: #a5730f;
+    --early: #536078;
+    --closed: #a14b3f;
+    --unknown: #6b7684;
+    --shadow: 0 1px 2px rgba(23,27,33,0.06), 0 8px 24px rgba(23,27,33,0.05);
+    --font-display: "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-mono: "SF Mono", "Cascadia Code", "Consolas", "Roboto Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0f14; --panel: #131920; --panel-2: #182029; --line: #232b35;
+      --ink: #e8ecef; --muted: #8b98a5; --accent: #a690f0;
+      --live: #4fae6d; --dormant: #3fa8a3; --pending: #d9a441; --early: #7c8bab;
+      --closed: #c07168; --unknown: #7a8492;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f14; --panel: #131920; --panel-2: #182029; --line: #232b35;
+    --ink: #e8ecef; --muted: #8b98a5; --accent: #a690f0;
+    --live: #4fae6d; --dormant: #3fa8a3; --pending: #d9a441; --early: #7c8bab;
+    --closed: #c07168; --unknown: #7a8492;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f7; --panel: #ffffff; --panel-2: #eceef1; --line: #dde1e6;
+    --ink: #171b21; --muted: #5b6472; --accent: #6e56cf;
+    --live: #2f9e58; --dormant: #1d8c86; --pending: #a5730f; --early: #536078;
+    --closed: #a14b3f; --unknown: #6b7684;
+    --shadow: 0 1px 2px rgba(23,27,33,0.06), 0 8px 24px rgba(23,27,33,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 18px; }
+  .brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 28px; letter-spacing: 0.01em; margin: 0 0 4px; text-wrap: balance; }
+  .brand h1 .accent { color: var(--accent); }
+  .brand p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 58ch; }
+  .head-meta { text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .head-meta .ts { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .methodology-btn { margin-top: 8px; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; background: none; border: 1px solid var(--line); color: var(--muted); padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+  .methodology-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .methodology-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .method { display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--shadow); }
+  .method.open { display: block; }
+  .method h2 { font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; }
+  .method ol { margin: 0; padding-left: 1.2em; font-size: 13.5px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 20px; }
+  .method .rule { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--muted); }
+  .method .rule b { color: var(--ink); }
+  .method .cov { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+
+  .searchbar { position: relative; margin-bottom: 14px; }
+  .searchbar input {
+    width: 100%; font-family: var(--font-body); font-size: 17px; padding: 14px 44px 14px 16px;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  .searchbar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .searchbar input::placeholder { color: var(--muted); }
+  .searchbar .icon { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-family: var(--font-mono); font-size: 13px; pointer-events: none; }
+
+  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--tone); border-radius: 4px; padding: 10px 12px; cursor: pointer; transition: transform 0.12s ease; text-align: left; }
+  @media (prefers-reduced-motion: reduce) { .stat { transition: none; } }
+  .stat:hover { transform: translateY(-1px); }
+  .stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .stat.active { background: var(--panel-2); }
+  .stat .n { font-family: var(--font-mono); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tone); line-height: 1; }
+  .stat .label { font-family: var(--font-display); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 5px; }
+
+  .status-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+  .status-row .hint { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .clear-btn { font-family: var(--font-display); font-size: 12px; letter-spacing: 0.03em; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 2px; }
+  .clear-btn:focus-visible { outline: 2px solid var(--accent); }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; min-width: 880px; }
+  thead th { position: sticky; top: 0; background: var(--panel-2); font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr.row { border-bottom: 1px solid var(--line); cursor: pointer; }
+  tbody tr.row:hover { background: var(--panel-2); }
+  tbody tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  tbody tr.row.expanded { background: var(--panel-2); }
+  td { padding: 10px 14px; vertical-align: top; font-size: 13.5px; }
+  td.company { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+  td.company .cat { display: block; font-family: var(--font-body); font-weight: 400; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  td.token { font-family: var(--font-mono); font-size: 12.5px; }
+  td.token .sym { color: var(--ink); font-weight: 600; }
+  td.token .chain { display: block; color: var(--muted); font-size: 10.5px; }
+  td.token .none { color: var(--muted); font-style: italic; font-family: var(--font-body); }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-display); font-size: 10.5px; letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 8px 3px 6px; border-radius: 100px; background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tone); flex: none; }
+  .pill .txt { color: var(--tone); }
+
+  .conf-cell { display: flex; align-items: center; gap: 8px; min-width: 90px; }
+  .conf-track { flex: 1; height: 5px; background: var(--panel-2); border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
+  .conf-fill { height: 100%; background: var(--tone); }
+  .conf-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  tr.detail { display: none; }
+  tr.detail.open { display: table-row; }
+  tr.detail td { padding: 0; border-bottom: 1px solid var(--line); }
+  .detail-inner { padding: 6px 20px 20px 20px; background: var(--panel-2); display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; }
+  .detail-inner h3 { font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 14px 0 8px; }
+  .reasoning { font-size: 14px; line-height: 1.6; }
+  .evidence-item { border-left: 2px solid var(--line); padding: 6px 0 6px 12px; margin-bottom: 8px; }
+  .evidence-item .meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .evidence-item .meta .strength { color: var(--ink); }
+  .evidence-item p { margin: 3px 0 0; font-size: 13.5px; }
+  .src-list { list-style: none; margin: 0; padding: 0; }
+  .src-list li { margin-bottom: 6px; }
+  .src-list a { font-family: var(--font-mono); font-size: 12px; color: var(--accent); text-decoration: none; word-break: break-all; }
+  .src-list a:hover { text-decoration: underline; }
+  .src-list a:focus-visible { outline: 2px solid var(--accent); }
+  .market-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .market-grid div { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+  .market-grid .k { font-family: var(--font-display); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .market-grid .v { font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+  .more-note { padding: 12px 16px; text-align: center; color: var(--muted); font-size: 12.5px; font-family: var(--font-mono); border-top: 1px solid var(--line); }
+  footer { margin-top: 20px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: center; }
+
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .method ol { grid-template-columns: 1fr; }
+    .detail-inner { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <div class="brand">
+      <h1>TGE <span class="accent">Tracker</span></h1>
+      <p>Token Generation Event status for every company in the Fundraise Brief, cross-checked against live CoinGecko market data — built on the CryptoLaunchVerifier evidence model.</p>
+      <button class="methodology-btn" id="methodBtn" type="button" aria-expanded="false" aria-controls="methodPanel">How this is scored</button>
+    </div>
+    <div class="head-meta">
+      <div>Snapshot generated</div>
+      <div class="ts" id="tsField">—</div>
+      <div style="margin-top:6px;">Sources: TIE Terminal (Fundraise Brief) · CoinGecko</div>
+    </div>
+  </div>
+
+  <div class="method" id="methodPanel">
+    <h2>Investigation workflow (Instructions.py)</h2>
+    <ol>
+      <li>Identify the official company &amp; entities</li>
+      <li>Search for official TGE / launch announcements</li>
+      <li>Verify on-chain existence (contract, mint, supply)</li>
+      <li>Verify market existence (CoinGecko, CMC, DefiLlama)</li>
+      <li>Verify exchange listings (CEX &amp; DEX)</li>
+      <li>Aggregate evidence, weight confidence, never infer</li>
+    </ol>
+    <div class="rule">
+      <b>POST_TGE</b> = fundraising record links a coin + CoinGecko confirms active trading &nbsp;·&nbsp;
+      <b>TOKEN_LIVE_NOT_TRADING</b> = coin confirmed, negligible volume &nbsp;·&nbsp;
+      <b>TGE_ANNOUNCED</b> = coin or token-sale round referenced, unverified on CoinGecko &nbsp;·&nbsp;
+      <b>UNKNOWN</b> = no coin or token-sale signal found in this pass
+    </div>
+    <div class="cov" id="covNote"></div>
+  </div>
+
+  <div class="searchbar">
+    <input id="searchBox" type="text" placeholder="Search any company in the Fundraise Brief — e.g. “Worldcoin”, “Ripple”, “Layer 2”…" aria-label="Search companies" autocomplete="off" />
+    <span class="icon">⏎</span>
+  </div>
+
+  <div class="stats" id="statStrip"></div>
+
+  <div class="status-row">
+    <span class="hint" id="countNote"></span>
+    <button class="clear-btn" id="clearBtn" type="button">Clear filters</button>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Round</th>
+          <th>Status</th>
+          <th>Confidence</th>
+          <th>Token</th>
+          <th>Market cap</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="emptyState" style="display:none;">No companies match the current search/filters.</div>
+    <div class="more-note" id="moreNote" style="display:none;"></div>
+  </div>
+
+  <footer>CryptoLaunchVerifier methodology · evidence-first, never fabricated · <span id="footStats"></span></footer>
+</div>
+
+<script>
+const DATASET = /*__DATA__*/{"generated_at":"","stats":{},"companies":[]}/*__END_DATA__*/;
+
+const STATUS_META = {
+  POST_TGE:              { label: "Post-TGE",          tone: "var(--live)" },
+  TOKEN_LIVE_NOT_TRADING:{ label: "Live, not trading",  tone: "var(--dormant)" },
+  TGE_ANNOUNCED:         { label: "TGE announced",      tone: "var(--pending)" },
+  PRE_TGE:               { label: "Pre-TGE",            tone: "var(--early)" },
+  NO_TOKEN:              { label: "No token",           tone: "var(--closed)" },
+  UNKNOWN:               { label: "Unknown",            tone: "var(--unknown)" }
+};
+const STATUS_ORDER = ["POST_TGE","TOKEN_LIVE_NOT_TRADING","TGE_ANNOUNCED","PRE_TGE","NO_TOKEN","UNKNOWN"];
+const ALL = DATASET.companies;
+
+let activeStatuses = new Set();
+let searchTerm = "";
+const RENDER_CAP = 300;
+const DEFAULT_CAP = 50;
+
+function fmtUSD(n) {
+  if (n === null || n === undefined) return "—";
+  const sign = n < 0 ? "-" : "";
+  n = Math.abs(n);
+  if (n >= 1e9) return sign + "$" + (n/1e9).toFixed(2) + "B";
+  if (n >= 1e6) return sign + "$" + (n/1e6).toFixed(2) + "M";
+  if (n >= 1e3) return sign + "$" + (n/1e3).toFixed(1) + "K";
+  return sign + "$" + (n < 1 ? n.toFixed(4) : n.toFixed(2));
+}
+function fmtDate(d) {
+  if (!d) return "—";
+  try { return new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
+  catch (e) { return d; }
+}
+function esc(s) {
+  const div = document.createElement("div");
+  div.textContent = s == null ? "" : String(s);
+  return div.innerHTML;
+}
+
+function buildCard(c) {
+  const evidence = [];
+  let reasoning = "";
+  const round = c.rt ? { type: c.rt, date: c.rd, amount: c.ra } : null;
+
+  if (c.s === "POST_TGE") {
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} links this company to ${c.tn} in the fundraising record.`, strength: "strong" });
+    evidence.push({ type: "market", source: "CoinGecko", summary: `${c.ts} trading at ${fmtUSD(c.mp)}, ${fmtUSD(c.mc)} market cap, ${fmtUSD(c.mv)} 24h volume.`, strength: "strong" });
+    reasoning = "Official fundraising record links this company to a coin, and CoinGecko independently confirms active trading — satisfies POST_TGE (announcement + verified, liquid market).";
+  } else if (c.s === "TOKEN_LIVE_NOT_TRADING") {
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} links this company to ${c.tn}.`, strength: "strong" });
+    evidence.push({ type: "market", source: "CoinGecko", summary: `${c.ts} is listed but 24h volume is negligible (${fmtUSD(c.mv)}) — contract/token exists, no active market.`, strength: "moderate" });
+    reasoning = "A coin exists and is indexed on CoinGecko, but trading volume is negligible — contract confirmed, no active trading pairs, so this is TOKEN_LIVE_NOT_TRADING rather than POST_TGE.";
+  } else if (c.s === "TGE_ANNOUNCED" && c.tn) {
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} links this company to a coin (${c.tn}) in the fundraising record.`, strength: "moderate" });
+    evidence.push({ type: "market", source: "CoinGecko", summary: `No independent CoinGecko listing found matching "${c.tn}" — on-chain/market existence not verified.`, strength: "weak (negative result)" });
+    reasoning = "TIE Terminal links this company to a named coin, but no independent CoinGecko listing was found to confirm it is live and tradable. Per the do-not-infer rule, held at TGE_ANNOUNCED rather than POST_TGE.";
+  } else if (c.s === "TGE_ANNOUNCED") {
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `Round type "${round.type}" on ${fmtDate(round.date)} indicates a token sale, but no specific coin is linked to this company in TIE Terminal's own data.`, strength: "moderate" });
+    reasoning = "The funding round itself is explicitly typed as a token sale/ICO/IEO/IDO, which is direct evidence a TGE-related event occurred — but no on-chain/market cross-check was performed for this company by name, so this stays at TGE_ANNOUNCED rather than POST_TGE.";
+  } else {
+    evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: "Company is on record as having raised funding, but no coin linkage or token-sale-type round was found for it in this pass of the database.", strength: "weak (absence of evidence)" });
+    reasoning = "No coin reference or token-sale-type funding round was found for this company. Per the do-not-infer rule, absence of evidence is not treated as evidence of absence — kept at UNKNOWN rather than asserting NO_TOKEN or PRE_TGE.";
+  }
+  return { evidence, reasoning, round };
+}
+
+function renderStats() {
+  const strip = document.getElementById("statStrip");
+  const counts = {};
+  STATUS_ORDER.forEach(s => counts[s] = 0);
+  for (const c of ALL) counts[c.s] = (counts[c.s] || 0) + 1;
+  strip.innerHTML = STATUS_ORDER.map(s => {
+    const meta = STATUS_META[s];
+    const isActive = activeStatuses.has(s);
+    return `<button class="stat ${isActive ? 'active' : ''}" style="--tone:${meta.tone}" data-status="${s}" type="button" aria-pressed="${isActive}">
+      <div class="n">${counts[s].toLocaleString()}</div>
+      <div class="label">${meta.label}</div>
+    </button>`;
+  }).join("");
+  strip.querySelectorAll(".stat").forEach(el => {
+    el.addEventListener("click", () => {
+      const s = el.dataset.status;
+      if (activeStatuses.has(s)) activeStatuses.delete(s); else activeStatuses.add(s);
+      renderStats();
+      renderTable();
+    });
+  });
+}
+
+function matchesSearch(c, t) {
+  if (c.n.toLowerCase().includes(t)) return true;
+  if (c.tn && c.tn.toLowerCase().includes(t)) return true;
+  if (c.ts && c.ts.toLowerCase().includes(t)) return true;
+  if (c.c && c.c.some(cat => cat.toLowerCase().includes(t))) return true;
+  return false;
+}
+
+function getFiltered() {
+  const t = searchTerm.trim().toLowerCase();
+  const hasFilter = activeStatuses.size > 0;
+  const hasSearch = t.length > 0;
+
+  if (!hasFilter && !hasSearch) {
+    return { rows: ALL.filter(c => c.mc).sort((a, b) => b.mc - a.mc).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true };
+  }
+
+  let rows = ALL;
+  if (hasFilter) rows = rows.filter(c => activeStatuses.has(c.s));
+  if (hasSearch) rows = rows.filter(c => matchesSearch(c, t));
+
+  const total = rows.length;
+  rows = rows.slice().sort((a, b) => {
+    if ((b.mc || 0) !== (a.mc || 0)) return (b.mc || 0) - (a.mc || 0);
+    return (b.f || 0) - (a.f || 0);
+  }).slice(0, RENDER_CAP);
+
+  return { rows, total, isDefault: false };
+}
+
+function renderTable() {
+  const { rows, total, isDefault } = getFiltered();
+  const tbody = document.getElementById("tbody");
+  const empty = document.getElementById("emptyState");
+  const moreNote = document.getElementById("moreNote");
+
+  document.getElementById("countNote").textContent = isDefault
+    ? `Showing top ${rows.length} by market cap — search or filter to explore all ${ALL.length.toLocaleString()} companies`
+    : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies`;
+
+  if (!rows.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "block";
+    moreNote.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+
+  if (!isDefault && total > rows.length) {
+    moreNote.style.display = "block";
+    moreNote.textContent = `Showing top ${rows.length} of ${total.toLocaleString()} matches (ranked by market cap, then confidence) — refine your search to narrow further.`;
+  } else {
+    moreNote.style.display = "none";
+  }
+
+  tbody.innerHTML = rows.map((c, i) => {
+    const meta = STATUS_META[c.s];
+    const tokenCell = c.tn
+      ? `<span class="sym">${esc(c.ts || c.tn)}</span>`
+      : `<span class="none">none confirmed</span>`;
+
+    return `
+      <tr class="row" data-idx="${i}" tabindex="0">
+        <td class="company">${esc(c.n)}<span class="cat">${esc((c.c||[]).slice(0,3).join(" · "))}</span></td>
+        <td class="num">${c.rd ? fmtDate(c.rd) : "—"}<span style="display:block;color:var(--muted);font-size:10.5px;">${esc(c.rt || "")}</span></td>
+        <td><span class="pill" style="--tone:${meta.tone}"><span class="dot"></span><span class="txt">${meta.label}</span></span></td>
+        <td>
+          <div class="conf-cell">
+            <div class="conf-track"><div class="conf-fill" style="--tone:${meta.tone}; width:${Math.round(c.f*100)}%;"></div></div>
+            <div class="conf-num">${c.f.toFixed(2)}</div>
+          </div>
+        </td>
+        <td class="token">${tokenCell}</td>
+        <td class="num">${c.mc ? fmtUSD(c.mc) : "—"}</td>
+      </tr>
+      <tr class="detail" data-idx="${i}">
+        <td colspan="6"></td>
+      </tr>`;
+  }).join("");
+
+  tbody.querySelectorAll("tr.row").forEach(row => {
+    const idx = row.dataset.idx;
+    const c = rows[+idx];
+    const toggle = () => {
+      const detail = tbody.querySelector(`tr.detail[data-idx="${idx}"]`);
+      const isOpen = row.classList.toggle("expanded");
+      detail.classList.toggle("open", isOpen);
+      if (isOpen && !detail.dataset.built) {
+        const card = buildCard(c);
+        const evidenceHtml = card.evidence.map(e => `
+          <div class="evidence-item">
+            <div class="meta">${esc(e.type)} · <span class="strength">${esc(e.strength)}</span></div>
+            <p>${esc(e.summary)}</p>
+          </div>`).join("");
+        const sourcesHtml = c.su ? `<li><a href="${esc(c.su)}" target="_blank" rel="noopener noreferrer">${esc(c.su)}</a></li>` : `<li style="color:var(--muted);font-family:var(--font-body);font-style:italic;">no source URL on file</li>`;
+        const marketHtml = c.tn && c.mp !== undefined ? `
+          <div class="market-grid">
+            <div><div class="k">Price</div><div class="v">${fmtUSD(c.mp)}</div></div>
+            <div><div class="k">Market cap</div><div class="v">${fmtUSD(c.mc)}</div></div>
+            <div><div class="k">24h volume</div><div class="v">${fmtUSD(c.mv)}</div></div>
+          </div>` : "";
+        detail.querySelector("td").innerHTML = `
+          <div class="detail-inner">
+            <div>
+              <h3>Reasoning</h3>
+              <p class="reasoning">${esc(card.reasoning)}</p>
+              <h3>Evidence trail</h3>
+              ${evidenceHtml}
+            </div>
+            <div>
+              ${marketHtml}
+              <h3>Source</h3>
+              <ul class="src-list">${sourcesHtml}</ul>
+            </div>
+          </div>`;
+        detail.dataset.built = "1";
+      }
+    };
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  });
+}
+
+document.getElementById("methodBtn").addEventListener("click", () => {
+  const panel = document.getElementById("methodPanel");
+  const btn = document.getElementById("methodBtn");
+  const open = panel.classList.toggle("open");
+  btn.setAttribute("aria-expanded", String(open));
+});
+
+let debounceTimer = null;
+document.getElementById("searchBox").addEventListener("input", e => {
+  clearTimeout(debounceTimer);
+  const val = e.target.value;
+  debounceTimer = setTimeout(() => { searchTerm = val; renderTable(); }, 100);
+});
+
+document.getElementById("clearBtn").addEventListener("click", () => {
+  activeStatuses.clear();
+  searchTerm = "";
+  document.getElementById("searchBox").value = "";
+  renderStats();
+  renderTable();
+});
+
+document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+document.getElementById("covNote").textContent = `This snapshot covers ${ALL.length.toLocaleString()} companies with a coin or token-sale-type round found across the Fundraise Brief's ${(DATASET.stats && DATASET.stats.total) || ALL.length} tracked records; the remainder of the ~5,086-company database returned no signal in this pass and is marked Unknown.`;
+document.getElementById("footStats").textContent = `${ALL.length.toLocaleString()} companies indexed · snapshot ${DATASET.generated_at.slice(0,10)}`;
+
+renderStats();
+renderTable();
+</script>
