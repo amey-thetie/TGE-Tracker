@@ -314,7 +314,7 @@ function getFiltered() {
   const hasSearch = t.length > 0;
 
   if (!hasFilter && !hasSearch) {
-    return { rows: ALL.filter(c => c.mc).sort((a, b) => b.mc - a.mc).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true };
+    return { rows: ALL.filter(c => c.rd).sort((a, b) => (a.rd < b.rd ? 1 : a.rd > b.rd ? -1 : 0)).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true };
   }
 
   let rows = ALL;
@@ -337,7 +337,7 @@ function renderTable() {
   const moreNote = document.getElementById("moreNote");
 
   document.getElementById("countNote").textContent = isDefault
-    ? `Showing top ${rows.length} by market cap — search or filter to explore all ${ALL.length.toLocaleString()} companies`
+    ? `Showing the latest ${rows.length} companies added to the Fundraise Brief — search or filter to explore all ${ALL.length.toLocaleString()} companies`
     : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies`;
 
   if (!rows.length) {
