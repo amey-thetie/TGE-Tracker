@@ -91,7 +91,10 @@
 
   .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); }
   table { width: 100%; border-collapse: collapse; min-width: 880px; }
-  thead th { position: sticky; top: 0; background: var(--panel-2); font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  thead th { position: sticky; top: 0; background: var(--panel-2); font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; cursor: pointer; user-select: none; }
+  thead th:hover { color: var(--accent); }
+  thead th:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  thead th .arrow { color: var(--accent); margin-left: 3px; font-size: 10px; }
   tbody tr.row { border-bottom: 1px solid var(--line); cursor: pointer; }
   tbody tr.row:hover { background: var(--panel-2); }
   tbody tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -194,12 +197,12 @@
     <table>
       <thead>
         <tr>
-          <th>Company</th>
-          <th>Round</th>
-          <th>Status</th>
-          <th>Confidence</th>
-          <th>Token</th>
-          <th>Market cap</th>
+          <th data-sort="n" tabindex="0">Company</th>
+          <th data-sort="rd" tabindex="0">Round</th>
+          <th data-sort="s" tabindex="0">Status</th>
+          <th data-sort="f" tabindex="0">Confidence</th>
+          <th data-sort="token" tabindex="0">Token</th>
+          <th data-sort="mc" tabindex="0">Market cap</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -227,8 +230,35 @@ const ALL = DATASET.companies;
 
 let activeStatuses = new Set();
 let searchTerm = "";
+let sortKey = null;
+let sortDir = 1;
 const RENDER_CAP = 300;
 const DEFAULT_CAP = 50;
+const SORT_DEFAULT_DIR = { n: 1, rd: -1, s: 1, f: -1, token: 1, mc: -1 };
+const SORT_LABELS = { n: "company", rd: "round date", s: "status", f: "confidence", token: "token", mc: "market cap" };
+
+function getSortValue(c, key) {
+  switch (key) {
+    case "n": return c.n.toLowerCase();
+    case "rd": return c.rd || null;
+    case "s": return STATUS_ORDER.indexOf(c.s);
+    case "f": return c.f;
+    case "token": return (c.ts || c.tn || "").toLowerCase() || null;
+    case "mc": return (c.mc === undefined || c.mc === null) ? null : c.mc;
+    default: return null;
+  }
+}
+function compareBy(a, b, key, dir) {
+  const av = getSortValue(a, key), bv = getSortValue(b, key);
+  const aNull = av === null || av === undefined || av === "";
+  const bNull = bv === null || bv === undefined || bv === "";
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  if (av < bv) return -1 * dir;
+  if (av > bv) return 1 * dir;
+  return 0;
+}
 
 function fmtUSD(n) {
   if (n === null || n === undefined) return "—";
@@ -312,9 +342,10 @@ function getFiltered() {
   const t = searchTerm.trim().toLowerCase();
   const hasFilter = activeStatuses.size > 0;
   const hasSearch = t.length > 0;
+  const isDefault = !hasFilter && !hasSearch && !sortKey;
 
-  if (!hasFilter && !hasSearch) {
-    return { rows: ALL.filter(c => c.rd).sort((a, b) => (a.rd < b.rd ? 1 : a.rd > b.rd ? -1 : 0)).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true };
+  if (isDefault) {
+    return { rows: ALL.filter(c => c.rd).sort((a, b) => compareBy(a, b, "rd", -1)).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true, isFullBrowse: false };
   }
 
   let rows = ALL;
@@ -322,23 +353,24 @@ function getFiltered() {
   if (hasSearch) rows = rows.filter(c => matchesSearch(c, t));
 
   const total = rows.length;
-  rows = rows.slice().sort((a, b) => {
-    if ((b.mc || 0) !== (a.mc || 0)) return (b.mc || 0) - (a.mc || 0);
-    return (b.f || 0) - (a.f || 0);
-  }).slice(0, RENDER_CAP);
+  const key = sortKey || "mc";
+  const dir = sortKey ? sortDir : -1;
+  rows = rows.slice().sort((a, b) => compareBy(a, b, key, dir) || compareBy(a, b, "f", -1)).slice(0, RENDER_CAP);
 
-  return { rows, total, isDefault: false };
+  return { rows, total, isDefault: false, isFullBrowse: !hasFilter && !hasSearch };
 }
 
 function renderTable() {
-  const { rows, total, isDefault } = getFiltered();
+  const { rows, total, isDefault, isFullBrowse } = getFiltered();
   const tbody = document.getElementById("tbody");
   const empty = document.getElementById("emptyState");
   const moreNote = document.getElementById("moreNote");
 
   document.getElementById("countNote").textContent = isDefault
     ? `Showing the latest ${rows.length} companies added to the Fundraise Brief — search or filter to explore all ${ALL.length.toLocaleString()} companies`
-    : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies`;
+    : isFullBrowse
+      ? `Showing top ${rows.length} of ${ALL.length.toLocaleString()} companies, sorted by ${SORT_LABELS[sortKey] || sortKey}`
+      : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies`;
 
   if (!rows.length) {
     tbody.innerHTML = "";
@@ -373,7 +405,7 @@ function renderTable() {
           </div>
         </td>
         <td class="token">${tokenCell}</td>
-        <td class="num">${c.mc ? fmtUSD(c.mc) : "—"}</td>
+        <td class="num">${(c.mc !== undefined && c.mc !== null) ? fmtUSD(c.mc) : "—"}</td>
       </tr>
       <tr class="detail" data-idx="${i}">
         <td colspan="6"></td>
@@ -440,9 +472,38 @@ document.getElementById("searchBox").addEventListener("input", e => {
 document.getElementById("clearBtn").addEventListener("click", () => {
   activeStatuses.clear();
   searchTerm = "";
+  sortKey = null;
+  sortDir = 1;
   document.getElementById("searchBox").value = "";
+  updateSortIndicators();
   renderStats();
   renderTable();
+});
+
+function updateSortIndicators() {
+  document.querySelectorAll("thead th[data-sort]").forEach(th => {
+    th.querySelectorAll(".arrow").forEach(a => a.remove());
+    th.setAttribute("aria-sort", "none");
+    if (th.dataset.sort === sortKey) {
+      th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+      const arrow = document.createElement("span");
+      arrow.className = "arrow";
+      arrow.textContent = sortDir === 1 ? "▴" : "▾";
+      th.appendChild(arrow);
+    }
+  });
+}
+
+document.querySelectorAll("thead th[data-sort]").forEach(th => {
+  const doSort = () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) sortDir *= -1;
+    else { sortKey = key; sortDir = SORT_DEFAULT_DIR[key] ?? 1; }
+    updateSortIndicators();
+    renderTable();
+  };
+  th.addEventListener("click", doSort);
+  th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); doSort(); } });
 });
 
 document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";

@@ -40,8 +40,8 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,294 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-07-28T08:00:00Z`
+- **5,339 companies** indexed — searchable by name, token, or category
+- Snapshot generated: `2026-07-28T08:30:00Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 
@@ -52,7 +52,7 @@ assigned a guessed status.
 | **TGE announced** (`TGE_ANNOUNCED`) | 654 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
 | **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
 | **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 3,956 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+| **Unknown** (`UNKNOWN`) | 4,001 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
 
 ## The investigation methodology
 
@@ -89,6 +89,11 @@ middle; no signal at all scores lowest.
   can be active at once.
 - **Default view** — with no search or filter active, shows the most
   recently-announced rounds in the Fundraise Brief, newest first.
+- **Sortable columns** — click any column header (Company, Round, Status,
+  Confidence, Token, Market cap) to sort the current view by that column;
+  click again to reverse direction. Sorting a column while browsing with no
+  search/filter switches out of the "latest additions" default view into a
+  full sorted browse of all companies (capped at 300 rendered rows).
 - **Row detail** — click any row to expand its full evidence trail,
   reasoning, live market stats (price / market cap / 24h volume), and
   source link, generated client-side from the row's raw data fields.
@@ -161,11 +166,13 @@ data/
     verifiedByCoinUid.json     Coins independently confirmed live on CoinGecko
     unmatchedCoins.json        Coins the Fundraise Brief names that CoinGecko couldn't match
     recent_rounds_unfiltered.json  Most-recent-rounds backfill pass (any round, not just token signal)
+    airtable_recent_companies.json  Raw export of the newest funded_companies rows from Airtable
     stats.json                  Snapshot of dataset-wide counts
 scripts/
   build_dataset.js            Classifies companies -> data/tge_dataset_full.json
   build_widget.js             Injects the dataset into widget_template.html
   merge_recent_rounds.js      Backfills round dates from a fresh unfiltered fetch
+  update_from_airtable.py     Merges newly-added companies straight from the Airtable base
   extract_roster_from_journal.js  Recovers agent results if a workflow run partially fails
   process_workflow_output.js  Parses a completed workflow's raw output file
   generate_readme.py          Regenerates this file from the current dataset stats
@@ -186,6 +193,24 @@ To refresh:
    `widget_template.html` + the dataset.
 4. `python scripts/generate_readme.py` — regenerates this file, including
    this line count and every number above.
+
+### Fast path: pull just the newest Airtable additions
+
+The Fundraise Brief's Airtable base ("Fundraise Data" -> `funded_companies`
+table) is the earliest place a company shows up — often before it has a
+`company_uid` or any round data in TIE Terminal at all. To pick up the
+newest additions without re-running the full pipeline:
+
+1. In a Claude Code session, list `funded_companies` records sorted by
+   `created_timestamp` descending (field ID `fldjGsIHxCQDyYCfI`) via the
+   Airtable MCP, and save the response (plus a `fieldMap` of fieldId ->
+   field name) to `data/raw/airtable_recent_companies.json`.
+2. `python scripts/update_from_airtable.py` — adds any company not already
+   in the dataset (including ones with no `company_uid` yet, using a
+   synthetic `airtable_<recordId>` ID), and backfills round dates for
+   existing companies where Airtable's lookup is more recent. Never
+   touches existing TGE status/token classification.
+3. `node scripts/build_widget.js` — rebuild.
 
 ## Known limitations
 
@@ -212,3 +237,9 @@ To refresh:
 - **Exchange listing detail (step 5 of the methodology) isn't captured.**
   The pipeline confirms *whether* a coin trades on CoinGecko, but not which
   specific centralized or decentralized exchanges list it.
+- **Airtable-only additions (`airtable_<recordId>` IDs) carry minimal data.**
+  Companies pulled in via `update_from_airtable.py` before they have a real
+  `company_uid` have no category, round type, or amount — just a name, an
+  optional round date, and (when Airtable's own `token_issuer` flag is set)
+  a `TGE_ANNOUNCED` status. They get a proper profile once TIE Terminal
+  assigns them a `company_uid` and the main pipeline picks them up.
