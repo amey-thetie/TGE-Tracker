@@ -1,4 +1,115 @@
-# TGE Tracker
+"""
+generate_readme.py
+
+Builds README.md from the current data/ snapshot so every number in the
+README stays in sync with the actual dataset baked into
+tge_tracker_widget.html. Run this after any pipeline refresh:
+
+    python scripts/generate_readme.py
+"""
+
+import json
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATASET_PATH = os.path.join(ROOT, "data", "tge_dataset_full.json")
+RAW_DIR = os.path.join(ROOT, "data", "raw")
+README_PATH = os.path.join(ROOT, "README.md")
+
+STATUS_ORDER = [
+    ("POST_TGE", "Post-TGE", 0.85, "Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000)."),
+    ("TOKEN_LIVE_NOT_TRADING", "Live, not trading", 0.6, "Coin is confirmed to exist on CoinGecko, but 24h volume is negligible — contract exists, no active market."),
+    ("TGE_ANNOUNCED", "TGE announced", "0.35 – 0.4", "A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko."),
+    ("PRE_TGE", "Pre-TGE", "—", "Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)*"),
+    ("NO_TOKEN", "No token", "—", "Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)*"),
+    ("UNKNOWN", "Unknown", 0.1, "No coin reference or token-sale-type round was found for this company in the Fundraise Brief."),
+]
+
+INVESTIGATION_STEPS = [
+    ("Identify the company", "Resolve the official entity — website, docs, GitHub, X, blog, foundation/labs split — before anything else."),
+    ("Search for announcements", "Look for TGE, token launch, tokenomics, mainnet token, airdrop, listing, contract deployment, or genesis language."),
+    ("Verify on-chain existence", "Contract address, mint address, deployment tx/timestamp, total supply, holder count — across 11 supported chains."),
+    ("Verify market existence", "CoinGecko, CoinMarketCap, DefiLlama, DexScreener, GeckoTerminal — price, market cap, FDV, liquidity, volume."),
+    ("Verify exchange listings", "Centralized (Binance, Coinbase, Kraken, ...) and decentralized (Uniswap, Jupiter, ...) — is trading actually live?"),
+    ("Aggregate evidence", "Every finding carries a source, strength, and timestamp. Conflicting evidence is never discarded, only explained."),
+]
+
+SCHEMA_FIELDS = [
+    ("u", "company_uid", "TIE Terminal company ID, e.g. `company_x3adb`"),
+    ("n", "company", "Display name"),
+    ("c", "category[]", "TIE company_category tags (e.g. `[\"DeFi\", \"Token Issuers\"]`)"),
+    ("s", "status", "One of the six CryptoLaunchVerifier states"),
+    ("f", "confidence", "0.0–1.0, per the weighting above"),
+    ("rt", "round_type", "Most recent funding round type (e.g. `STRATEGIC`, `SEED`)"),
+    ("rd", "round_date", "Most recent round's announcement date, `YYYY-MM-DD`"),
+    ("ra", "round_amount", "Funding amount in USD for that round"),
+    ("su", "source_url", "First source URL for that round"),
+    ("tn", "token_name", "Coin name, if any is linked (present only when a coin exists)"),
+    ("ts", "token_symbol", "Ticker symbol, only set once CoinGecko-verified"),
+    ("mp", "market_price_usd", "Live price at snapshot time (CoinGecko)"),
+    ("mc", "market_cap_usd", "Live market cap at snapshot time"),
+    ("mv", "market_volume_24h_usd", "Live 24h volume at snapshot time"),
+]
+
+
+def load_json(name):
+    with open(os.path.join(RAW_DIR, name), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_dataset():
+    with open(DATASET_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_status_table(stats):
+    lines = ["| Status | Count | Confidence | Meaning |", "|---|---|---|---|"]
+    for key, label, conf, meaning in STATUS_ORDER:
+        count = stats.get(key, 0)
+        lines.append(f"| **{label}** (`{key}`) | {count:,} | {conf} | {meaning} |")
+    return "\n".join(lines)
+
+
+def build_steps_list():
+    return "\n".join(
+        f"{i}. **{title}** — {detail}" for i, (title, detail) in enumerate(INVESTIGATION_STEPS, start=1)
+    )
+
+
+def build_schema_table():
+    lines = ["| Field | Meaning | Notes |", "|---|---|---|"]
+    for short, meaning, notes in SCHEMA_FIELDS:
+        lines.append(f"| `{short}` | {meaning} | {notes} |")
+    return "\n".join(lines)
+
+
+def main():
+    dataset = load_dataset()
+    stats = dataset["stats"]
+    generated_at = dataset["generated_at"]
+    total = stats.get("total", sum(v for k, v in stats.items() if k != "total"))
+
+    try:
+        verified = load_json("verifiedByCoinUid.json")
+        unmatched = load_json("unmatchedCoins.json")
+        n_verified, n_unmatched = len(verified), len(unmatched)
+        n_coins_total = n_verified + n_unmatched
+    except FileNotFoundError:
+        n_verified = n_unmatched = n_coins_total = None
+
+    status_table = build_status_table(stats)
+    steps_list = build_steps_list()
+    schema_table = build_schema_table()
+
+    coin_verification_line = (
+        f"Of the **{n_coins_total:,} coins** the Fundraise Brief links to a company, "
+        f"**{n_verified:,}** were independently confirmed live on CoinGecko and "
+        f"**{n_unmatched:,}** could not be matched to any CoinGecko listing."
+        if n_coins_total is not None
+        else "Coin verification counts are unavailable — see `data/raw/verifiedByCoinUid.json`."
+    )
+
+    content = f"""# TGE Tracker
 
 A searchable dashboard tracking Token Generation Event (TGE) status for
 every company in TheTie's **Fundraise Brief**, cross-checked live against
@@ -40,19 +151,12 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,294 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-07-28T08:00:00Z`
+- **{total:,} companies** indexed — searchable by name, token, or category
+- Snapshot generated: `{generated_at}`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
-- Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
+- {coin_verification_line}
 
-| Status | Count | Confidence | Meaning |
-|---|---|---|---|
-| **Post-TGE** (`POST_TGE`) | 552 | 0.85 | Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000). |
-| **Live, not trading** (`TOKEN_LIVE_NOT_TRADING`) | 132 | 0.6 | Coin is confirmed to exist on CoinGecko, but 24h volume is negligible — contract exists, no active market. |
-| **TGE announced** (`TGE_ANNOUNCED`) | 654 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
-| **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
-| **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 3,956 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+{status_table}
 
 ## The investigation methodology
 
@@ -63,12 +167,7 @@ coin, and market checks) at scale across thousands of companies; steps 1,
 aggregation) are part of the methodology but not yet run automatically for
 every company — see [Known limitations](#known-limitations).
 
-1. **Identify the company** — Resolve the official entity — website, docs, GitHub, X, blog, foundation/labs split — before anything else.
-2. **Search for announcements** — Look for TGE, token launch, tokenomics, mainnet token, airdrop, listing, contract deployment, or genesis language.
-3. **Verify on-chain existence** — Contract address, mint address, deployment tx/timestamp, total supply, holder count — across 11 supported chains.
-4. **Verify market existence** — CoinGecko, CoinMarketCap, DefiLlama, DexScreener, GeckoTerminal — price, market cap, FDV, liquidity, volume.
-5. **Verify exchange listings** — Centralized (Binance, Coinbase, Kraken, ...) and decentralized (Uniswap, Jupiter, ...) — is trading actually live?
-6. **Aggregate evidence** — Every finding carries a source, strength, and timestamp. Conflicting evidence is never discarded, only explained.
+{steps_list}
 
 **Confidence scoring.** `Instructions.py` weights official announcements,
 verified contracts, mint verification, and exchange/aggregator listings
@@ -130,22 +229,7 @@ evidence/reasoning text per company — came out to several megabytes almost
 entirely from repeated boilerplate, so that text is generated client-side
 from these raw fields instead):
 
-| Field | Meaning | Notes |
-|---|---|---|
-| `u` | company_uid | TIE Terminal company ID, e.g. `company_x3adb` |
-| `n` | company | Display name |
-| `c` | category[] | TIE company_category tags (e.g. `["DeFi", "Token Issuers"]`) |
-| `s` | status | One of the six CryptoLaunchVerifier states |
-| `f` | confidence | 0.0–1.0, per the weighting above |
-| `rt` | round_type | Most recent funding round type (e.g. `STRATEGIC`, `SEED`) |
-| `rd` | round_date | Most recent round's announcement date, `YYYY-MM-DD` |
-| `ra` | round_amount | Funding amount in USD for that round |
-| `su` | source_url | First source URL for that round |
-| `tn` | token_name | Coin name, if any is linked (present only when a coin exists) |
-| `ts` | token_symbol | Ticker symbol, only set once CoinGecko-verified |
-| `mp` | market_price_usd | Live price at snapshot time (CoinGecko) |
-| `mc` | market_cap_usd | Live market cap at snapshot time |
-| `mv` | market_volume_24h_usd | Live 24h volume at snapshot time |
+{schema_table}
 
 ## Repo layout
 
@@ -212,3 +296,12 @@ To refresh:
 - **Exchange listing detail (step 5 of the methodology) isn't captured.**
   The pipeline confirms *whether* a coin trades on CoinGecko, but not which
   specific centralized or decentralized exchanges list it.
+"""
+
+    with open(README_PATH, "w", encoding="utf-8", newline="\n") as f:
+        f.write(content)
+    print(f"wrote {README_PATH} ({len(content)} chars)")
+
+
+if __name__ == "__main__":
+    main()
