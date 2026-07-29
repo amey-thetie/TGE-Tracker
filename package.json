@@ -1,0 +1,11 @@
+{
+  "name": "tge-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local server + build pipeline for the TGE Tracker widget",
+  "scripts": {
+    "start": "node app.js",
+    "build:dataset": "node scripts/build_dataset.js",
+    "build:widget": "node scripts/build_widget.js"
+  }
+}

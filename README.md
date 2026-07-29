@@ -8,7 +8,9 @@ methodology defined in [`Instructions.py`](Instructions.py) (the
 symbols, dates, or contracts, ever.
 
 **[Open the widget](tge_tracker_widget.html)** — self-contained HTML, no
-server or build step needed. Just open it in a browser.
+server or build step needed. Just open it in a browser, or run
+`npm start` (or `node app.js`) to serve it at `http://localhost:3000/`
+instead of a `file://` path.
 
 ## Contents
 
@@ -16,6 +18,7 @@ server or build step needed. Just open it in a browser.
 - [Current snapshot](#current-snapshot)
 - [The investigation methodology](#the-investigation-methodology)
 - [Widget features](#widget-features)
+- [Running it](#running-it)
 - [How this was built](#how-this-was-built)
 - [Data schema](#data-schema)
 - [Repo layout](#repo-layout)
@@ -40,19 +43,19 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,339 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-07-28T08:30:00Z`
+- **5,346 companies** indexed — searchable by name, token, or category
+- Snapshot generated: `2026-07-29T15:00:00Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 
 | Status | Count | Confidence | Meaning |
 |---|---|---|---|
-| **Post-TGE** (`POST_TGE`) | 552 | 0.85 | Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000). |
+| **Post-TGE** (`POST_TGE`) | 555 | 0.85 | Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000). |
 | **Live, not trading** (`TOKEN_LIVE_NOT_TRADING`) | 132 | 0.6 | Coin is confirmed to exist on CoinGecko, but 24h volume is negligible — contract exists, no active market. |
-| **TGE announced** (`TGE_ANNOUNCED`) | 654 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
+| **TGE announced** (`TGE_ANNOUNCED`) | 656 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
 | **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
 | **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 4,001 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+| **Unknown** (`UNKNOWN`) | 4,003 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
 
 ## The investigation methodology
 
@@ -94,6 +97,22 @@ middle; no signal at all scores lowest.
   click again to reverse direction. Sorting a column while browsing with no
   search/filter switches out of the "latest additions" default view into a
   full sorted browse of all companies (capped at 300 rendered rows).
+- **Fundraise Brief period picker** — a native month/year calendar input
+  plus a "Load →" button, mirroring the exact monthly `brief_period`
+  concept Airtable uses. Clicking Load filters to companies whose round
+  date falls in that month and reports "✓ N companies · from snapshot
+  generated [date]". This filters what's *already in the current
+  snapshot* — it does not live-fetch that month from Airtable. If a month
+  has zero matches, the status message names the exact
+  `python scripts/load_brief_period.py <period>` command to pull it in.
+  Combinable with search, status tiles, and column sorting — pair it with
+  the Post-TGE status tile for "which companies actually completed a TGE
+  in this month" at a glance.
+- **Refresh button** — reloads the page from disk, so it picks up a newer
+  build if you've rebuilt the widget since opening it. It does **not**
+  live-fetch new data from Airtable/TIE Terminal/CoinGecko — this project
+  has no backend, so refreshing the underlying dataset still means running
+  the pipeline scripts below and rebuilding.
 - **Row detail** — click any row to expand its full evidence trail,
   reasoning, live market stats (price / market cap / 24h volume), and
   source link, generated client-side from the row's raw data fields.
@@ -101,6 +120,22 @@ middle; no signal at all scores lowest.
   summarizes the six-step workflow and decision rules inline.
 - Light/dark theme aware; the table scrolls horizontally on narrow screens
   without the page itself scrolling sideways.
+
+## Running it
+
+The widget is a self-contained HTML file — opening it directly in a browser
+is enough, no server required. `app.js` is a small optional convenience:
+
+```
+npm start          # or: node app.js
+node app.js 8080   # pick a different port (defaults to 3000)
+```
+
+It's a plain static file server (Node built-ins only, zero dependencies)
+that serves this directory at `http://localhost:3000/` and maps `/` to
+`tge_tracker_widget.html`. It exists purely so you get a real `http://` URL
+instead of `file://` — it does **not** add a backend, and does not change
+how data gets refreshed (still the `scripts/` pipeline below).
 
 ## How this was built
 
@@ -123,6 +158,14 @@ one context:
   fixes round-date coverage for companies that raised money but had no
   coin/token-sale signal (see [Known limitations](#known-limitations) for
   why this was needed).
+- **Brief-period loads** — Airtable's `FundingRounds` table tags every round
+  that shipped in a monthly Fundraise Brief with a `brief_period` (`YYYY-MM`)
+  and, critically, a human-reviewed **"Post TGE Token"** checkbox — TheTie's
+  own curated call on whether a company's token has already had its TGE.
+  `load_brief_period.py` pulls one period at a time and uses that flag to
+  upgrade companies straight to `POST_TGE` even when no coin was ever
+  independently matched on CoinGecko, tagged with `pv: "curated"` so the
+  widget can explain the difference (see [Data schema](#data-schema)).
 
 See `scripts/` for the code that assembles and classifies the results of
 that pipeline into `data/tge_dataset_full.json`.
@@ -151,6 +194,7 @@ from these raw fields instead):
 | `mp` | market_price_usd | Live price at snapshot time (CoinGecko) |
 | `mc` | market_cap_usd | Live market cap at snapshot time |
 | `mv` | market_volume_24h_usd | Live 24h volume at snapshot time |
+| `pv` | provenance | Only set to `"curated"` when status came from Airtable's human-reviewed "Post TGE Token" flag rather than a CoinGecko match |
 
 ## Repo layout
 
@@ -158,6 +202,8 @@ from these raw fields instead):
 Instructions.py              CryptoLaunchVerifier system prompt (the methodology)
 widget_template.html         Editable widget source (data injected at build time)
 tge_tracker_widget.html      Built widget — this is the file you actually open
+app.js                       Optional local static server (npm start / node app.js)
+package.json                 Just the "start" script + build:* shortcuts, no dependencies
 data/
   tge_dataset_full.json      The classified dataset baked into the widget
   raw/                       Intermediate pipeline outputs
@@ -167,12 +213,14 @@ data/
     unmatchedCoins.json        Coins the Fundraise Brief names that CoinGecko couldn't match
     recent_rounds_unfiltered.json  Most-recent-rounds backfill pass (any round, not just token signal)
     airtable_recent_companies.json  Raw export of the newest funded_companies rows from Airtable
+    airtable_brief_<period>.json  Raw export of one brief period's FundingRounds rows (e.g. airtable_brief_2026-07.json)
     stats.json                  Snapshot of dataset-wide counts
 scripts/
   build_dataset.js            Classifies companies -> data/tge_dataset_full.json
   build_widget.js             Injects the dataset into widget_template.html
   merge_recent_rounds.js      Backfills round dates from a fresh unfiltered fetch
   update_from_airtable.py     Merges newly-added companies straight from the Airtable base
+  load_brief_period.py        Loads one Fundraise Brief period, incl. curated Post-TGE upgrades
   extract_roster_from_journal.js  Recovers agent results if a workflow run partially fails
   process_workflow_output.js  Parses a completed workflow's raw output file
   generate_readme.py          Regenerates this file from the current dataset stats
@@ -212,8 +260,41 @@ newest additions without re-running the full pipeline:
    touches existing TGE status/token classification.
 3. `node scripts/build_widget.js` — rebuild.
 
+### Fast path: load any specific brief period
+
+Every round in the `FundingRounds` table that shipped in a monthly Brief
+carries a `brief_period` (`YYYY-MM`, derived from `brief_round = TRUE`) and
+the curated `Post TGE Token` / `Post TGE Token added in Terminal`
+checkboxes. To (re)load one period — useful for backfilling an older month
+or re-syncing one that changed after it shipped:
+
+1. In a Claude Code session, filter the `FundingRounds` table
+   (`tblhMpbvsCCSfWKCv` in the `Fundraise Data` base, `apppBDKslp00CJu9n`) by
+   `brief_period = "<YYYY-MM>"` via the Airtable MCP, fetching `company_uid`,
+   `company`, `funding_announcement_date`, `funding_round_type`,
+   `funding_amount`, `source_url_1`, `sector`, `Post TGE Token`, and
+   `Post TGE Token added in Terminal`. Save the response (records +
+   `fieldMap`) to `data/raw/airtable_brief_<period>.json`.
+2. `python scripts/load_brief_period.py <period>` — e.g.
+   `python scripts/load_brief_period.py 2026-07`. Adds companies missing
+   from that period, backfills round data, and upgrades any company flagged
+   `Post TGE Token` straight to `POST_TGE` (existing CoinGecko-confirmed
+   statuses are never downgraded).
+3. `node scripts/build_widget.js` — rebuild.
+
 ## Known limitations
 
+- **Only one brief period has been loaded via `load_brief_period.py` so far
+  (`2026-07`).** Older months' curated `Post TGE Token` flags haven't been
+  pulled in yet, so some companies that are genuinely `POST_TGE` per
+  TheTie's own review are still sitting at whatever the base pipeline
+  inferred for them.
+- **Curated review can disagree with this project's own earlier manual
+  reasoning** — e.g. Pact Labs was reasoned through as `NO_TOKEN` in an
+  early manual pass of this project (its round funds Tether's USAT
+  stablecoin, not an obviously Pact-Labs-native token), but Airtable's
+  `Post TGE Token` flag says otherwise for it, and the automated loader
+  correctly defers to the curated flag over that earlier manual guess.
 - **`TGE_ANNOUNCED` companies with no token name shown** raised money via a
   round explicitly typed as a token sale/ICO/IEO/IDO, but the Fundraise
   Brief doesn't link a specific coin to them, and no company-name-based

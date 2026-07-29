@@ -84,6 +84,35 @@
   .stat .n { font-family: var(--font-mono); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tone); line-height: 1; }
   .stat .label { font-family: var(--font-display); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 5px; }
 
+  .controls-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .controls-row label { font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .controls-row input[type="month"] {
+    font-family: var(--font-mono); font-size: 13.5px; padding: 7px 10px; border-radius: 5px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    color-scheme: light dark;
+  }
+  .controls-row input[type="month"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .load-btn {
+    font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+    background: var(--accent); color: #fff; border: none;
+    padding: 7px 14px; border-radius: 5px; cursor: pointer;
+  }
+  .load-btn:hover { filter: brightness(1.08); }
+  .load-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .load-status { font-family: var(--font-mono); font-size: 12px; }
+  .load-status.ok { color: var(--live); }
+  .load-status.warn { color: var(--pending); }
+  .refresh-btn {
+    margin-left: auto; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.04em;
+    text-transform: uppercase; background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 6px 12px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .refresh-btn .spin { display: inline-block; transition: transform 0.4s ease; }
+  .refresh-btn:active .spin { transform: rotate(180deg); }
+  @media (prefers-reduced-motion: reduce) { .refresh-btn .spin { transition: none; } }
+
   .status-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
   .status-row .hint { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
   .clear-btn { font-family: var(--font-display); font-size: 12px; letter-spacing: 0.03em; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 2px; }
@@ -186,6 +215,16 @@
     <span class="icon">⏎</span>
   </div>
 
+  <div class="controls-row">
+    <label for="briefMonth">Fundraise Brief period</label>
+    <input type="month" id="briefMonth" aria-label="Pick a Fundraise Brief month" />
+    <button class="load-btn" id="loadBriefBtn" type="button">Load →</button>
+    <span class="load-status" id="loadStatus"></span>
+    <button class="refresh-btn" id="refreshBtn" type="button" title="Reloads this page from disk, picking up a newer build if the widget has been rebuilt since you opened it. This does not live-fetch new data from Airtable/TIE Terminal/CoinGecko — see README “Refreshing the data”.">
+      <span class="spin">↻</span> Refresh
+    </button>
+  </div>
+
   <div class="stats" id="statStrip"></div>
 
   <div class="status-row">
@@ -232,10 +271,16 @@ let activeStatuses = new Set();
 let searchTerm = "";
 let sortKey = null;
 let sortDir = 1;
+let briefPeriod = null;
 const RENDER_CAP = 300;
 const DEFAULT_CAP = 50;
 const SORT_DEFAULT_DIR = { n: 1, rd: -1, s: 1, f: -1, token: 1, mc: -1 };
 const SORT_LABELS = { n: "company", rd: "round date", s: "status", f: "confidence", token: "token", mc: "market cap" };
+
+function monthLabel(yyyyMm) {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
 
 function getSortValue(c, key) {
   switch (key) {
@@ -285,7 +330,11 @@ function buildCard(c) {
   let reasoning = "";
   const round = c.rt ? { type: c.rt, date: c.rd, amount: c.ra } : null;
 
-  if (c.s === "POST_TGE") {
+  if (c.s === "POST_TGE" && c.pv === "curated") {
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} is on record for this company.`, strength: "strong" });
+    evidence.push({ type: "review", source: "Fundraise Brief curation", summary: `Flagged "Post TGE Token" by TheTie's own Fundraise Brief review — a human-reviewed signal that this company's token has already had its TGE.`, strength: "strong (curated, not independently market-verified)" });
+    reasoning = "TheTie's Fundraise Brief review curated this company as already past its Token Generation Event. This is a human-reviewed signal rather than an independent CoinGecko market check, so it's recorded as POST_TGE at moderate-high confidence rather than the higher confidence reserved for CoinGecko-verified, actively-traded tokens.";
+  } else if (c.s === "POST_TGE") {
     if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} links this company to ${c.tn} in the fundraising record.`, strength: "strong" });
     evidence.push({ type: "market", source: "CoinGecko", summary: `${c.ts} trading at ${fmtUSD(c.mp)}, ${fmtUSD(c.mc)} market cap, ${fmtUSD(c.mv)} 24h volume.`, strength: "strong" });
     reasoning = "Official fundraising record links this company to a coin, and CoinGecko independently confirms active trading — satisfies POST_TGE (announcement + verified, liquid market).";
@@ -342,7 +391,8 @@ function getFiltered() {
   const t = searchTerm.trim().toLowerCase();
   const hasFilter = activeStatuses.size > 0;
   const hasSearch = t.length > 0;
-  const isDefault = !hasFilter && !hasSearch && !sortKey;
+  const hasBriefPeriod = briefPeriod !== null;
+  const isDefault = !hasFilter && !hasSearch && !sortKey && !hasBriefPeriod;
 
   if (isDefault) {
     return { rows: ALL.filter(c => c.rd).sort((a, b) => compareBy(a, b, "rd", -1)).slice(0, DEFAULT_CAP), total: ALL.length, isDefault: true, isFullBrowse: false };
@@ -351,9 +401,10 @@ function getFiltered() {
   let rows = ALL;
   if (hasFilter) rows = rows.filter(c => activeStatuses.has(c.s));
   if (hasSearch) rows = rows.filter(c => matchesSearch(c, t));
+  if (hasBriefPeriod) rows = rows.filter(c => c.rd && c.rd.startsWith(briefPeriod));
 
   const total = rows.length;
-  const key = sortKey || "mc";
+  const key = sortKey || "rd";
   const dir = sortKey ? sortDir : -1;
   rows = rows.slice().sort((a, b) => compareBy(a, b, key, dir) || compareBy(a, b, "f", -1)).slice(0, RENDER_CAP);
 
@@ -366,11 +417,14 @@ function renderTable() {
   const empty = document.getElementById("emptyState");
   const moreNote = document.getElementById("moreNote");
 
+  const dateSuffix = briefPeriod ? ` in ${monthLabel(briefPeriod)}` : "";
+  const sortSuffix = sortKey ? `, sorted by ${SORT_LABELS[sortKey] || sortKey}` : (briefPeriod ? ", newest first" : "");
+
   document.getElementById("countNote").textContent = isDefault
     ? `Showing the latest ${rows.length} companies added to the Fundraise Brief — search or filter to explore all ${ALL.length.toLocaleString()} companies`
     : isFullBrowse
-      ? `Showing top ${rows.length} of ${ALL.length.toLocaleString()} companies, sorted by ${SORT_LABELS[sortKey] || sortKey}`
-      : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies`;
+      ? `Showing top ${rows.length} of ${total.toLocaleString()} companies${dateSuffix}${sortSuffix}`
+      : `${total.toLocaleString()} match${total === 1 ? "" : "es"} of ${ALL.length.toLocaleString()} companies${dateSuffix}`;
 
   if (!rows.length) {
     tbody.innerHTML = "";
@@ -469,12 +523,38 @@ document.getElementById("searchBox").addEventListener("input", e => {
   debounceTimer = setTimeout(() => { searchTerm = val; renderTable(); }, 100);
 });
 
+document.getElementById("refreshBtn").addEventListener("click", () => {
+  location.reload();
+});
+
+function setLoadStatus(text, kind) {
+  const el = document.getElementById("loadStatus");
+  el.textContent = text;
+  el.className = "load-status" + (kind ? " " + kind : "");
+}
+
+document.getElementById("loadBriefBtn").addEventListener("click", () => {
+  const val = document.getElementById("briefMonth").value; // "YYYY-MM" or ""
+  if (!val) { setLoadStatus("Pick a month first.", "warn"); return; }
+  briefPeriod = val;
+  const count = ALL.filter(c => c.rd && c.rd.startsWith(val)).length;
+  if (count > 0) {
+    setLoadStatus(`✓ ${count.toLocaleString()} compan${count === 1 ? "y" : "ies"} · from snapshot generated ${DATASET.generated_at.slice(0, 10)}`, "ok");
+  } else {
+    setLoadStatus(`No companies with a round date in ${monthLabel(val)} in this snapshot — run "python scripts/load_brief_period.py ${val}" to pull it from Airtable.`, "warn");
+  }
+  renderTable();
+});
+
 document.getElementById("clearBtn").addEventListener("click", () => {
   activeStatuses.clear();
   searchTerm = "";
   sortKey = null;
   sortDir = 1;
+  briefPeriod = null;
   document.getElementById("searchBox").value = "";
+  document.getElementById("briefMonth").value = "";
+  setLoadStatus("", null);
   updateSortIndicators();
   renderStats();
   renderTable();
@@ -507,6 +587,7 @@ document.querySelectorAll("thead th[data-sort]").forEach(th => {
 });
 
 document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+document.getElementById("briefMonth").value = DATASET.generated_at.slice(0, 7);
 document.getElementById("covNote").textContent = `This snapshot covers ${ALL.length.toLocaleString()} companies with a coin or token-sale-type round found across the Fundraise Brief's ${(DATASET.stats && DATASET.stats.total) || ALL.length} tracked records; the remainder of the ~5,086-company database returned no signal in this pass and is marked Unknown.`;
 document.getElementById("footStats").textContent = `${ALL.length.toLocaleString()} companies indexed · snapshot ${DATASET.generated_at.slice(0,10)}`;
 
