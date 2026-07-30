@@ -130,7 +130,7 @@ instead of a `file://` path.
 - [Current snapshot](#current-snapshot)
 - [The investigation methodology](#the-investigation-methodology)
 - [Widget features](#widget-features)
-- [Running it](#running-it)
+- [Setup and run](#setup-and-run)
 - [How this was built](#how-this-was-built)
 - [Data schema](#data-schema)
 - [Repo layout](#repo-layout)
@@ -221,21 +221,62 @@ middle; no signal at all scores lowest.
 - Light/dark theme aware; the table scrolls horizontally on narrow screens
   without the page itself scrolling sideways.
 
-## Running it
+## Setup and run
 
-The widget is a self-contained HTML file — opening it directly in a browser
-is enough, no server required. `app.js` is a small optional convenience:
+### Prerequisites
+
+- **Node.js 18+** — only used for `app.js` (the local server) and the
+  `scripts/*.js` pipeline. Zero npm dependencies; there is nothing to
+  `npm install`.
+- **Python 3.8+** — only used for `scripts/*.py` (README generation, the
+  Airtable/brief-period loaders). Standard library only; nothing to `pip
+  install`.
+
+Neither is required just to *view* the widget — it's a single static HTML
+file with the entire dataset embedded inline.
+
+### Get the code
+
+```
+git clone https://github.com/amey-thetie/TGE-Tracker.git
+cd TGE-Tracker
+```
+
+### Option A — just open it (no setup)
+
+Double-click [tge_tracker_widget.html](tge_tracker_widget.html), or from a
+terminal:
+
+```
+start tge_tracker_widget.html    # Windows
+open tge_tracker_widget.html     # macOS
+xdg-open tge_tracker_widget.html # Linux
+```
+
+### Option B — run the local server
 
 ```
 npm start          # or: node app.js
-node app.js 8080   # pick a different port (defaults to 3000)
+node app.js 8080   # pick a different port if 3000 is taken (defaults to 3000)
 ```
 
-It's a plain static file server (Node built-ins only, zero dependencies)
-that serves this directory at `http://localhost:3000/` and maps `/` to
-`tge_tracker_widget.html`. It exists purely so you get a real `http://` URL
-instead of `file://` — it does **not** add a backend, and does not change
-how data gets refreshed (still the `scripts/` pipeline below).
+Then open `http://localhost:3000/` in a browser. Ctrl+C to stop. This is a
+plain static file server (Node built-ins only) that maps `/` to
+`tge_tracker_widget.html` — it exists purely so you get a real `http://`
+URL instead of `file://`. It does **not** add a backend or change how data
+gets refreshed (still the `scripts/` pipeline below).
+
+### Verify it's working
+
+- The header should immediately show a company count (e.g. "Showing the
+  latest 50 companies…") and a populated table — everything is embedded,
+  so there's no network call to wait on.
+- Try the search box, click a status tile (e.g. Post-TGE), and try the
+  Fundraise Brief month picker's Load → button to confirm interactivity.
+- Open browser devtools and confirm no console errors.
+
+See [Widget features](#widget-features) for the full feature list, or
+[Refreshing the data](#refreshing-the-data) to update the dataset itself.
 
 ## How this was built
 
