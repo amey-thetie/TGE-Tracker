@@ -220,7 +220,7 @@
     <input type="month" id="briefMonth" aria-label="Pick a Fundraise Brief month" />
     <button class="load-btn" id="loadBriefBtn" type="button">Load →</button>
     <span class="load-status" id="loadStatus"></span>
-    <button class="refresh-btn" id="refreshBtn" type="button" title="Reloads this page from disk, picking up a newer build if the widget has been rebuilt since you opened it. This does not live-fetch new data from Airtable/TIE Terminal/CoinGecko — see README “Refreshing the data”.">
+    <button class="refresh-btn" id="refreshBtn" type="button" title="Fetches companies added to the Fundraise Brief since this snapshot and classifies them live (requires running via `npm start` with an Airtable token configured — see README). Falls back to a plain page reload if no local server is available.">
       <span class="spin">↻</span> Refresh
     </button>
   </div>
@@ -523,15 +523,54 @@ document.getElementById("searchBox").addEventListener("input", e => {
   debounceTimer = setTimeout(() => { searchTerm = val; renderTable(); }, 100);
 });
 
-document.getElementById("refreshBtn").addEventListener("click", () => {
-  location.reload();
-});
-
 function setLoadStatus(text, kind) {
   const el = document.getElementById("loadStatus");
   el.textContent = text;
   el.className = "load-status" + (kind ? " " + kind : "");
 }
+
+function isRunningOnLocalServer() {
+  return location.protocol === "http:" && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+}
+
+document.getElementById("refreshBtn").addEventListener("click", async () => {
+  if (!isRunningOnLocalServer()) {
+    setLoadStatus('Live refresh only works when this page is served locally. Run "npm start" in the project folder and open http://localhost:3000/ — it can\'t reach a backend from a plain file or a hosted page like this one.', "warn");
+    return;
+  }
+  const btn = document.getElementById("refreshBtn");
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">↻</span> Refreshing…';
+  setLoadStatus("Checking the Fundraise Brief for new companies…", null);
+  let networkFailure = false;
+  try {
+    let res;
+    try {
+      res = await fetch("/api/refresh", { method: "POST" });
+    } catch (fetchErr) {
+      networkFailure = true;
+      throw new Error("could not reach the server");
+    }
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `Refresh failed (${res.status})`);
+    ALL.length = 0;
+    ALL.push(...body.dataset.companies);
+    DATASET.generated_at = body.dataset.generated_at;
+    DATASET.stats = body.dataset.stats;
+    document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+    renderStats();
+    renderTable();
+    setLoadStatus(`✓ Refreshed — ${body.added} new compan${body.added === 1 ? "y" : "ies"} added (${body.total.toLocaleString()} total, checked ${body.checked} recent Airtable record${body.checked === 1 ? "" : "s"})`, "ok");
+  } catch (err) {
+    const hint = networkFailure ? " Is \"npm start\" still running?" : "";
+    const msg = err.message.replace(/\.+$/, "");
+    setLoadStatus(`Refresh failed: ${msg}.${hint}`, "warn");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
 
 document.getElementById("loadBriefBtn").addEventListener("click", () => {
   const val = document.getElementById("briefMonth").value; // "YYYY-MM" or ""

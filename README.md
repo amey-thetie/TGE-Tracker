@@ -43,8 +43,8 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,346 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-07-29T15:00:00Z`
+- **5,359 companies** indexed — searchable by name, token, or category
+- Snapshot generated: `2026-07-31T12:00:00Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 
@@ -55,7 +55,7 @@ assigned a guessed status.
 | **TGE announced** (`TGE_ANNOUNCED`) | 656 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
 | **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
 | **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 4,003 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+| **Unknown** (`UNKNOWN`) | 4,016 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
 
 ## The investigation methodology
 
@@ -108,11 +108,16 @@ middle; no signal at all scores lowest.
   Combinable with search, status tiles, and column sorting — pair it with
   the Post-TGE status tile for "which companies actually completed a TGE
   in this month" at a glance.
-- **Refresh button** — reloads the page from disk, so it picks up a newer
-  build if you've rebuilt the widget since opening it. It does **not**
-  live-fetch new data from Airtable/TIE Terminal/CoinGecko — this project
-  has no backend, so refreshing the underlying dataset still means running
-  the pipeline scripts below and rebuilding.
+- **Refresh button (live, when run via `npm start`)** — calls a local
+  `/api/refresh` endpoint that fetches companies added to the Fundraise
+  Brief since the current snapshot, checks any flagged as a token issuer
+  against CoinGecko's public API (exact name match only), classifies them
+  with the same rules as the batch pipeline, and re-renders in place — no
+  page reload. Requires an Airtable token in `.env` (see
+  [Setup and run](#setup-and-run)); without a server or a token it falls
+  back to a clear inline message rather than failing silently. This is an
+  incremental "what's new since last time" check, not a full historical
+  re-investigation — see [Known limitations](#known-limitations).
 - **Row detail** — click any row to expand its full evidence trail,
   reasoning, live market stats (price / market cap / 24h volume), and
   source link, generated client-side from the row's raw data fields.
@@ -153,18 +158,37 @@ open tge_tracker_widget.html     # macOS
 xdg-open tge_tracker_widget.html # Linux
 ```
 
-### Option B — run the local server
+### Option B — run the local server (needed for the live Refresh button)
 
 ```
 npm start          # or: node app.js
 node app.js 8080   # pick a different port if 3000 is taken (defaults to 3000)
 ```
 
-Then open `http://localhost:3000/` in a browser. Ctrl+C to stop. This is a
-plain static file server (Node built-ins only) that maps `/` to
-`tge_tracker_widget.html` — it exists purely so you get a real `http://`
-URL instead of `file://`. It does **not** add a backend or change how data
-gets refreshed (still the `scripts/` pipeline below).
+Then open `http://localhost:3000/` in a browser. Ctrl+C to stop. `app.js`
+serves the widget (mapping `/` to `tge_tracker_widget.html`) and, if
+configured, exposes `POST /api/refresh` for the Refresh button's live
+incremental fetch. Without the server (opening the file directly) the
+Refresh button just tells you to run `npm start` instead.
+
+### Enable the live Refresh button (optional)
+
+The Refresh button can pull companies added to the Fundraise Brief since
+the current snapshot and classify them on the spot. This needs your own
+Airtable token — nothing is bundled with the repo:
+
+1. Create a token at <https://airtable.com/create/tokens> with scope
+   `data.records:read` and access to the "Fundraise Data" base
+   (`apppBDKslp00CJu9n`).
+2. `cp .env.example .env` (Windows: `copy .env.example .env`), then open
+   `.env` yourself and paste the token in as `AIRTABLE_TOKEN=...`. Don't
+   paste it into a chat with anyone, including an AI assistant — it's a
+   credential. `.env` is already gitignored.
+3. Restart the server (`npm start`). The startup log will say
+   `Live refresh: enabled` once it finds the token.
+
+Without a token, everything else in the widget works exactly the same —
+Refresh just shows a message telling you it's not configured.
 
 ### Verify it's working
 
@@ -243,7 +267,8 @@ from these raw fields instead):
 Instructions.py              CryptoLaunchVerifier system prompt (the methodology)
 widget_template.html         Editable widget source (data injected at build time)
 tge_tracker_widget.html      Built widget — this is the file you actually open
-app.js                       Optional local static server (npm start / node app.js)
+app.js                       Local server (npm start / node app.js) + POST /api/refresh
+.env.example                 Copy to .env and add your Airtable token to enable live refresh
 package.json                 Just the "start" script + build:* shortcuts, no dependencies
 data/
   tge_dataset_full.json      The classified dataset baked into the widget
@@ -258,7 +283,10 @@ data/
     stats.json                  Snapshot of dataset-wide counts
 scripts/
   build_dataset.js            Classifies companies -> data/tge_dataset_full.json
-  build_widget.js             Injects the dataset into widget_template.html
+  build_widget.js             Injects the dataset into widget_template.html (also used live by app.js)
+  classify.js                 Shared classification rules used by app.js's live /api/refresh
+  airtable_client.js          Airtable REST API wrapper used by app.js (needs AIRTABLE_TOKEN)
+  coingecko_client.js         Public CoinGecko API wrapper used by app.js (exact-name-match only)
   merge_recent_rounds.js      Backfills round dates from a fresh unfiltered fetch
   update_from_airtable.py     Merges newly-added companies straight from the Airtable base
   load_brief_period.py        Loads one Fundraise Brief period, incl. curated Post-TGE upgrades
@@ -325,6 +353,17 @@ or re-syncing one that changed after it shipped:
 
 ## Known limitations
 
+- **The live Refresh button mechanizes steps 2 and 4 of the methodology
+  only (announcement + market check), not the full investigation.** It
+  does not do company disambiguation, on-chain verification, exchange
+  listing checks, or the "Post TGE Token" curated flag (that flag lives on
+  `FundingRounds`, not the `funded_companies` table the live endpoint
+  reads) — running the real multi-step AI investigation for every new
+  company on every click isn't practical (it would take real LLM time and
+  cost per company, not something a button click can do instantly). Its
+  CoinGecko match is also an exact company-name match only, which is a
+  weaker signal than a real `coin_uid` — a company whose token has a
+  different name than the company itself won't be found this way.
 - **Only one brief period has been loaded via `load_brief_period.py` so far
   (`2026-07`).** Older months' curated `Post TGE Token` flags haven't been
   pulled in yet, so some companies that are genuinely `POST_TGE` per
