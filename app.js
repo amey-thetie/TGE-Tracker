@@ -36,9 +36,22 @@ const { verifyByExactName } = require("./scripts/coingecko_client");
 const { classifyCompany } = require("./scripts/classify");
 const { buildWidgetHtml } = require("./scripts/build_widget");
 
+// This is meant to be a resilient long-running local dev server — one bad
+// request should never take the whole thing down. Log and keep serving
+// rather than let Node's default "crash on unhandled rejection" behavior
+// kill the process out from under whoever's using it.
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled promise rejection (server staying up):", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception (server staying up):", err);
+});
+
 const ROOT = __dirname;
 const DEFAULT_FILE = "tge_tracker_widget.html";
-const PORT = Number(process.argv[2]) || 3000;
+// Priority: explicit CLI arg (manual `node app.js 8080`) > PORT env var
+// (set by tooling that auto-assigns a free port) > default 3000.
+const PORT = Number(process.argv[2]) || Number(process.env.PORT) || 3000;
 const HOST = "127.0.0.1";
 
 const AIRTABLE_BASE_ID = "apppBDKslp00CJu9n"; // "Fundraise Data"
@@ -184,7 +197,11 @@ async function handleRefresh(req, res) {
 
 const server = http.createServer((req, res) => {
   if (req.url === "/api/refresh" && req.method === "POST") {
-    handleRefresh(req, res);
+    handleRefresh(req, res).catch((err) => {
+      console.error("Unhandled error in /api/refresh:", err);
+      if (!res.headersSent) sendJson(res, 500, { error: `Internal error: ${err.message || err}` });
+      else if (!res.writableEnded) res.end();
+    });
     return;
   }
 
