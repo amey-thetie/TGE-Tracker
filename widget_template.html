@@ -334,6 +334,14 @@ function buildCard(c) {
     if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} is on record for this company.`, strength: "strong" });
     evidence.push({ type: "review", source: "Fundraise Brief curation", summary: `Flagged "Post TGE Token" by TheTie's own Fundraise Brief review — a human-reviewed signal that this company's token has already had its TGE.`, strength: "strong (curated, not independently market-verified)" });
     reasoning = "TheTie's Fundraise Brief review curated this company as already past its Token Generation Event. This is a human-reviewed signal rather than an independent CoinGecko market check, so it's recorded as POST_TGE at moderate-high confidence rather than the higher confidence reserved for CoinGecko-verified, actively-traded tokens.";
+  } else if (c.pv === "name-match") {
+    const trading = c.s === "POST_TGE";
+    if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `Round type "${round.type}" on ${fmtDate(round.date)} indicates a token sale, but no specific coin is linked to this company in TIE Terminal's own data.`, strength: "moderate" });
+    evidence.push({ type: "inference", source: "CoinGecko name match", summary: `This company's name uniquely matches a CoinGecko coin named "${c.tn}" (${c.ts}). The link is inferred from the name — TIE Terminal does not assert it.`, strength: "moderate (inferred link, not an asserted coin_uid)" });
+    evidence.push({ type: "market", source: "CoinGecko", summary: trading
+      ? `${c.ts} trading at ${fmtUSD(c.mp)}, ${fmtUSD(c.mc)} market cap, ${fmtUSD(c.mv)} 24h volume.`
+      : `${c.ts} is listed but 24h volume is negligible (${fmtUSD(c.mv)}).`, strength: trading ? "strong" : "moderate" });
+    reasoning = `This company had a token-sale-type round but no coin linked in TIE Terminal's data, so it previously sat at TGE_ANNOUNCED unverified. Its name uniquely matches a live CoinGecko coin${trading ? " that is actively trading" : ", though that coin's volume is negligible"}. Because the company-to-token link is inferred from an exact unique name match rather than asserted by TIE Terminal, this is scored below the coin_uid-verified path — treat it as strong-but-inferred, and confirm the company genuinely issued this token before relying on it.`;
   } else if (c.s === "POST_TGE") {
     if (round) evidence.push({ type: "announcement", source: "TIE Terminal (Fundraise Brief)", summary: `${round.type} round on ${fmtDate(round.date)} links this company to ${c.tn} in the fundraising record.`, strength: "strong" });
     evidence.push({ type: "market", source: "CoinGecko", summary: `${c.ts} trading at ${fmtUSD(c.mp)}, ${fmtUSD(c.mc)} market cap, ${fmtUSD(c.mv)} 24h volume.`, strength: "strong" });

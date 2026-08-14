@@ -43,19 +43,19 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,368 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-08-05T09:00:00Z`
+- **5,380 companies** indexed — searchable by name, token, or category
+- Snapshot generated: `2026-08-14T08:49:07.798Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 
 | Status | Count | Confidence | Meaning |
 |---|---|---|---|
-| **Post-TGE** (`POST_TGE`) | 555 | 0.85 | Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000). |
-| **Live, not trading** (`TOKEN_LIVE_NOT_TRADING`) | 132 | 0.6 | Coin is confirmed to exist on CoinGecko, but 24h volume is negligible — contract exists, no active market. |
-| **TGE announced** (`TGE_ANNOUNCED`) | 656 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
+| **Post-TGE** (`POST_TGE`) | 647 | 0.85 | Fundraising record links a coin **and** CoinGecko confirms active trading (24h volume ≥ $1,000). |
+| **Live, not trading** (`TOKEN_LIVE_NOT_TRADING`) | 229 | 0.6 | Coin is confirmed to exist on CoinGecko, but 24h volume is negligible — contract exists, no active market. |
+| **TGE announced** (`TGE_ANNOUNCED`) | 473 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
 | **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
 | **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 4,025 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+| **Unknown** (`UNKNOWN`) | 4,031 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
 
 ## The investigation methodology
 
@@ -259,7 +259,7 @@ from these raw fields instead):
 | `mp` | market_price_usd | Live price at snapshot time (CoinGecko) |
 | `mc` | market_cap_usd | Live market cap at snapshot time |
 | `mv` | market_volume_24h_usd | Live 24h volume at snapshot time |
-| `pv` | provenance | Only set to `"curated"` when status came from Airtable's human-reviewed "Post TGE Token" flag rather than a CoinGecko match |
+| `pv` | provenance | How the status was reached when it wasn't the standard coin_uid + CoinGecko path. `"curated"` = Airtable's human-reviewed "Post TGE Token" flag. `"name-match"` = company name uniquely matched a live CoinGecko coin (inferred link, scored lower). Absent = standard path. |
 
 ## Repo layout
 
@@ -290,6 +290,8 @@ scripts/
   merge_recent_rounds.js      Backfills round dates from a fresh unfiltered fetch
   update_from_airtable.py     Merges newly-added companies straight from the Airtable base
   load_brief_period.py        Loads one Fundraise Brief period, incl. curated Post-TGE upgrades
+  apply_curated_post_tge.py   Applies curated "Post TGE Token" flags across ALL periods at once
+  verify_announced_by_name.py Name-matches unverified TGE_ANNOUNCED companies against CoinGecko
   extract_roster_from_journal.js  Recovers agent results if a workflow run partially fails
   process_workflow_output.js  Parses a completed workflow's raw output file
   generate_readme.py          Regenerates this file from the current dataset stats
@@ -364,25 +366,26 @@ or re-syncing one that changed after it shipped:
   CoinGecko match is also an exact company-name match only, which is a
   weaker signal than a real `coin_uid` — a company whose token has a
   different name than the company itself won't be found this way.
-- **Only one brief period has been loaded via `load_brief_period.py` so far
-  (`2026-07`).** Older months' curated `Post TGE Token` flags haven't been
-  pulled in yet, so some companies that are genuinely `POST_TGE` per
-  TheTie's own review are still sitting at whatever the base pipeline
-  inferred for them.
+- **`name-match` results are inferred links, not asserted ones.** 180
+  companies that had a token-sale-type round but no coin in TIE Terminal's
+  data were resolved by matching the company name against CoinGecko
+  (exact, unique-name-only; ambiguous names skipped). They're scored 0.70
+  / 0.50 rather than 0.85 / 0.60 and tagged `pv: "name-match"`, and the
+  widget's evidence card says plainly that the link is inferred. Spot-checks
+  look right (Chiliz→CHZ, Agoric→BLD, Boundless→ZKC), but a company whose
+  token simply shares its name with an unrelated coin could still slip
+  through — confirm before relying on any single one.
 - **Curated review can disagree with this project's own earlier manual
   reasoning** — e.g. Pact Labs was reasoned through as `NO_TOKEN` in an
   early manual pass of this project (its round funds Tether's USAT
   stablecoin, not an obviously Pact-Labs-native token), but Airtable's
   `Post TGE Token` flag says otherwise for it, and the automated loader
   correctly defers to the curated flag over that earlier manual guess.
-- **`TGE_ANNOUNCED` companies with no token name shown** raised money via a
-  round explicitly typed as a token sale/ICO/IEO/IDO, but the Fundraise
-  Brief doesn't link a specific coin to them, and no company-name-based
-  CoinGecko search was run for that bucket (~650 companies) — a few of
-  these are almost certainly live tokens that just aren't reflected here
-  yet (e.g. Credible Finance's CRED token was confirmed live in manual
-  spot-checks during development, but the bulk pipeline still shows it as
-  `TGE_ANNOUNCED` since it wasn't part of the 880-coin verification pass).
+- **~470 `TGE_ANNOUNCED` companies remain unresolved.** These had a
+  token-sale-type round but no coin in TIE Terminal's data *and* no unique
+  CoinGecko name match — so their token either isn't listed, isn't live, or
+  trades under a name unrelated to the company's. Resolving these needs
+  per-company research rather than a bulk pass.
 - **`PRE_TGE` and `NO_TOKEN` are currently always 0.** The bulk classifier
   only distinguishes "coin/token-round signal found" from "nothing found"
   (`UNKNOWN`) — it doesn't yet attempt the finer judgment calls (e.g. "this
