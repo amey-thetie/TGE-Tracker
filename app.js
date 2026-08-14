@@ -122,7 +122,13 @@ async function handleRefresh(req, res) {
   }
 
   try {
-    const sinceIso = dataset.generated_at;
+    // Use a DEDICATED sync cursor, not generated_at. generated_at means "when
+    // was this snapshot last built" and gets bumped by any rebuild or
+    // reclassification pass; reusing it as the ingest cursor means such a pass
+    // silently advances it past Airtable records that were never ingested, and
+    // the next refresh then reports "0 new" while skipping them for good.
+    // Falls back to generated_at only on first run, before the field exists.
+    const sinceIso = dataset.last_airtable_sync || dataset.generated_at;
     const records = await fetchRecentFundedCompanies(token, {
       baseId: AIRTABLE_BASE_ID,
       tableId: AIRTABLE_TABLE_ID,
@@ -178,6 +184,10 @@ async function handleRefresh(req, res) {
     for (const c of dataset.companies) statusCounts[c.s] = (statusCounts[c.s] || 0) + 1;
     dataset.stats = { total: dataset.companies.length, ...statusCounts };
     dataset.generated_at = new Date().toISOString();
+    // Only advance the sync cursor after Airtable actually returned - if the
+    // fetch had failed we'd have thrown before reaching here, so the cursor
+    // never skips a window we didn't successfully read.
+    dataset.last_airtable_sync = dataset.generated_at;
 
     const datasetJson = JSON.stringify(dataset);
     fs.writeFileSync(datasetPath, datasetJson);

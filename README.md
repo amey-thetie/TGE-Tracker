@@ -43,8 +43,8 @@ assigned a guessed status.
 
 ## Current snapshot
 
-- **5,380 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-08-14T08:49:07.798Z`
+- **5,383 companies** indexed — searchable by name, token, or category
+- Snapshot generated: `2026-08-14T10:55:45.796Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 
@@ -55,7 +55,7 @@ assigned a guessed status.
 | **TGE announced** (`TGE_ANNOUNCED`) | 473 | 0.35 – 0.4 | A coin is referenced, or the round itself is typed as a token sale/ICO/IEO/IDO, but it isn't independently verified on CoinGecko. |
 | **Pre-TGE** (`PRE_TGE`) | 0 | — | Company has publicly discussed a token, but no announcement or contract exists yet. *(not produced by the current pipeline — see Limitations)* |
 | **No token** (`NO_TOKEN`) | 0 | — | Evidence strongly indicates the project has no token. *(not produced by the current pipeline — see Limitations)* |
-| **Unknown** (`UNKNOWN`) | 4,031 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
+| **Unknown** (`UNKNOWN`) | 4,034 | 0.1 | No coin reference or token-sale-type round was found for this company in the Fundraise Brief. |
 
 ## The investigation methodology
 
