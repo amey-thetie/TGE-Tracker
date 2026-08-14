@@ -537,6 +537,21 @@ function setLoadStatus(text, kind) {
   el.className = "load-status" + (kind ? " " + kind : "");
 }
 
+// Single place that swaps in a newer snapshot, used by both the manual
+// Refresh and the background poll so the two can't drift.
+// Filter state lives in module variables, not in the data, so re-rendering
+// keeps the user's search, tiles, month, and sort exactly as they were.
+function applySnapshot(ds) {
+  ALL.length = 0;
+  ALL.push(...ds.companies);
+  DATASET.generated_at = ds.generated_at;
+  DATASET.stats = ds.stats;
+  document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  document.getElementById("footStats").textContent = `${ALL.length.toLocaleString()} companies indexed · snapshot ${DATASET.generated_at.slice(0,10)}`;
+  renderStats();
+  renderTable();
+}
+
 function isRunningOnLocalServer() {
   return location.protocol === "http:" && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
 }
@@ -562,14 +577,13 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
     }
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || `Refresh failed (${res.status})`);
-    ALL.length = 0;
-    ALL.push(...body.dataset.companies);
-    DATASET.generated_at = body.dataset.generated_at;
-    DATASET.stats = body.dataset.stats;
-    document.getElementById("tsField").textContent = new Date(DATASET.generated_at).toISOString().replace("T", " ").slice(0, 16) + " UTC";
-    renderStats();
-    renderTable();
-    setLoadStatus(`✓ Refreshed — ${body.added} new compan${body.added === 1 ? "y" : "ies"} added (${body.total.toLocaleString()} total, checked ${body.checked} recent Airtable record${body.checked === 1 ? "" : "s"})`, "ok");
+    applySnapshot(body.dataset);
+    // A market-data source that failed looks identical to "no coin found" in
+    // the table, so say so out loud rather than reporting a clean success.
+    const warnings = body.warnings || [];
+    const base = `${body.added} new compan${body.added === 1 ? "y" : "ies"} added (${body.total.toLocaleString()} total, checked ${body.checked} recent Airtable record${body.checked === 1 ? "" : "s"})`;
+    if (warnings.length) setLoadStatus(`Refreshed with problems — ${base}. ${warnings.join(" ")}`, "warn");
+    else setLoadStatus(`✓ Refreshed — ${base}`, "ok");
   } catch (err) {
     const hint = networkFailure ? " Is \"npm start\" still running?" : "";
     const msg = err.message.replace(/\.+$/, "");
@@ -640,4 +654,45 @@ document.getElementById("footStats").textContent = `${ALL.length.toLocaleString(
 
 renderStats();
 renderTable();
+
+/* ---- background poll -------------------------------------------------
+   The server sweeps on its own schedule, so an open tab would otherwise sit
+   on a snapshot that is quietly hours old. Poll the cheap /api/snapshot for
+   the timestamp and pull the full dataset only when it actually moves.
+   Applied silently: filters and sort are preserved by applySnapshot, and the
+   header timestamp is what tells you the data underneath changed.          */
+const POLL_MS = 60000;
+let pollBusy = false;
+
+async function pollForNewSnapshot() {
+  if (pollBusy) return;                                    // previous poll still in flight
+  if (document.getElementById("refreshBtn").disabled) return; // manual refresh running — don't race it
+  if (document.hidden) return;                             // hidden tab: don't burn requests
+  pollBusy = true;
+  try {
+    const res = await fetch("/api/snapshot", { cache: "no-store" });
+    if (!res.ok) return;
+    const meta = await res.json();
+    if (!meta.generated_at || meta.generated_at === DATASET.generated_at) return;
+    if (meta.busy) return; // a write is mid-flight; pick it up next tick instead
+    const dsRes = await fetch("/api/dataset", { cache: "no-store" });
+    if (!dsRes.ok) return;
+    applySnapshot(await dsRes.json());
+  } catch (err) {
+    // Server went away (or was never there). Stay quiet in the UI — the page
+    // is fully usable on the snapshot it already has, and nagging on every
+    // tick would be worse than saying nothing. Log it though: a poll that
+    // silently stops working is otherwise indistinguishable from a server
+    // that simply has nothing new.
+    console.warn("Snapshot poll failed:", err);
+  } finally {
+    pollBusy = false;
+  }
+}
+
+if (isRunningOnLocalServer()) {
+  setInterval(pollForNewSnapshot, POLL_MS);
+  // Catch up immediately when a backgrounded tab comes back into view.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollForNewSnapshot(); });
+}
 </script>

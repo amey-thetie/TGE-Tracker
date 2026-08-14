@@ -45,11 +45,11 @@ SCHEMA_FIELDS = [
     ("ra", "round_amount", "Funding amount in USD for that round"),
     ("su", "source_url", "First source URL for that round"),
     ("tn", "token_name", "Coin name, if any is linked (present only when a coin exists)"),
-    ("ts", "token_symbol", "Ticker symbol, only set once CoinGecko-verified"),
-    ("mp", "market_price_usd", "Live price at snapshot time (CoinGecko)"),
+    ("ts", "token_symbol", "Ticker symbol, only set once market-verified"),
+    ("mp", "market_price_usd", "Live price at snapshot time (CoinGecko, or CoinMarketCap where `pv` says so)"),
     ("mc", "market_cap_usd", "Live market cap at snapshot time"),
     ("mv", "market_volume_24h_usd", "Live 24h volume at snapshot time"),
-    ("pv", "provenance", "How the status was reached when it wasn't the standard coin_uid + CoinGecko path. `\"curated\"` = Airtable's human-reviewed \"Post TGE Token\" flag. `\"name-match\"` = company name uniquely matched a live CoinGecko coin (inferred link, scored lower). Absent = standard path."),
+    ("pv", "provenance", "How the status was reached when it wasn't the standard coin_uid + CoinGecko path. `\"curated\"` = Airtable's human-reviewed \"Post TGE Token\" flag. `\"name-match\"` = company name uniquely matched a live CoinGecko coin (inferred link, scored lower). `\"cmc-name-match\"` = same inferred name match, but confirmed on CoinMarketCap after CoinGecko found nothing, so the price on that row comes from CMC. Absent = standard path."),
 ]
 
 
@@ -114,7 +114,7 @@ def main():
 
 A searchable dashboard tracking Token Generation Event (TGE) status for
 every company in TheTie's **Fundraise Brief**, cross-checked live against
-**CoinGecko** market data. Built on the evidence-first investigation
+**CoinGecko** and **CoinMarketCap** market data. Built on the evidence-first investigation
 methodology defined in [`Instructions.py`](Instructions.py) (the
 `CryptoLaunchVerifier` system prompt) — accuracy over speed, no fabricated
 symbols, dates, or contracts, ever.
@@ -130,6 +130,7 @@ instead of a `file://` path.
 - [Current snapshot](#current-snapshot)
 - [The investigation methodology](#the-investigation-methodology)
 - [Widget features](#widget-features)
+- [How it works](#how-it-works)
 - [Setup and run](#setup-and-run)
 - [How this was built](#how-this-was-built)
 - [Data schema](#data-schema)
@@ -145,8 +146,9 @@ checked for two things:
 1. Does the Fundraise Brief itself link this company to a coin, or does its
    most recent round carry a token-sale-type label (`TOKEN`, `ICO`, `IEO`,
    `IDO`)?
-2. If so, does **CoinGecko** independently confirm that coin actually
-   exists and is trading — not just announced?
+2. If so, does **CoinGecko** — or **CoinMarketCap**, for anything CoinGecko
+   can't match — independently confirm that coin actually exists and is
+   trading, not just announced?
 
 Both questions are answered from real data pulled at build time. Nothing
 here is inferred, guessed, or filled in from model memory — if the pipeline
@@ -184,6 +186,42 @@ middle; no signal at all scores lowest.
 
 ## Widget features
 
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│ TGE Tracker      [ How this is scored ]      snapshot 2026-08-14 UTC │
+├──────────────────────────────────────────────────────────────────────┤
+│ ┌──────────────────────────────────────────────────────────────────┐ │
+│ │ Search any company in the Fundraise Brief…                   (1) │ │
+│ └──────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│ [ 2026-08 ] [ Load → ] (3)  ✓ 128 companies       (4) [ ↻ Refresh ]  │
+│                                                                      │
+│ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐    │
+│ │  647   │ │  229   │ │  473   │ │   0    │ │   0    │ │ 4,034  │    │
+│ │Post-TGE│ │Live not│ │TGE ann.│ │Pre-TGE │ │No token│ │Unknown │(2) │
+│ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘    │
+│                                                                      │
+│ Showing the latest 50 of 5,383                     [ Clear filters ] │
+├──────────────────────────────────────────────────────────────────────┤
+│ Company ▾    Round ▾      Status ▾     Conf ▾  Token ▾  Mkt cap ▾(5) │
+│ ──────────────────────────────────────────────────────────────────── │
+│ Worldcoin    Aug 11 2026  POST_TGE     0.85    WLD      $1.9B        │
+│ Ondo Finance Aug 04 2026  POST_TGE     0.85    ONDO     $2.9B        │
+│ Blockspace   Aug 03 2026  UNKNOWN      0.10    —        —            │
+│ ┌── expanded row (6) ──────────────────────────────────────────────┐ │
+│ │ evidence · source · strength    price · market cap · 24h volume  │ │
+│ └──────────────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────────┤
+│ 5,383 companies indexed · snapshot 2026-08-14                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Search** · 2. **Status tiles** · 3. **Brief month + Load** ·
+4. **Refresh** · 5. **Sortable headers** · 6. **Expandable row**
+
+Only **(4) Refresh** reaches the network. Everything else operates on data
+already embedded in the file, which is why it works from a `file://` path.
+
 - **Search** — matches company name, token name/symbol, or category across
   every indexed company. Debounced, capped at 300 rendered results with a
   "refine your search" note if a query matches more than that.
@@ -211,13 +249,18 @@ middle; no signal at all scores lowest.
 - **Refresh button (live, when run via `npm start`)** — calls a local
   `/api/refresh` endpoint that fetches companies added to the Fundraise
   Brief since the current snapshot, checks any flagged as a token issuer
-  against CoinGecko's public API (exact name match only), classifies them
-  with the same rules as the batch pipeline, and re-renders in place — no
-  page reload. Requires an Airtable token in `.env` (see
-  [Setup and run](#setup-and-run)); without a server or a token it falls
-  back to a clear inline message rather than failing silently. This is an
-  incremental "what's new since last time" check, not a full historical
-  re-investigation — see [Known limitations](#known-limitations).
+  against CoinGecko and then CoinMarketCap (exact match only, no fuzzy
+  guessing), classifies them with the same rules as the batch pipeline, and
+  re-renders in place — no page reload. Requires an Airtable token in `.env`
+  (see [Setup and run](#setup-and-run)); without a server or a token it falls
+  back to a clear inline message rather than failing silently. Refresh only
+  ever *adds* companies — for status changes on companies already tracked,
+  see [Automatic sweeps](#automatic-sweeps-optional).
+- **Auto-updating while open** — when served locally, the page polls
+  `/api/snapshot` once a minute and pulls a new dataset only when the
+  timestamp actually moves, so a tab left open picks up background sweeps on
+  its own. Your search, status tiles, month, and sort are preserved across the
+  swap; the header timestamp is what tells you the data underneath changed.
 - **Row detail** — click any row to expand its full evidence trail,
   reasoning, live market stats (price / market cap / 24h volume), and
   source link, generated client-side from the row's raw data fields.
@@ -225,6 +268,75 @@ middle; no signal at all scores lowest.
   summarizes the six-step workflow and decision rules inline.
 - Light/dark theme aware; the table scrolls horizontally on narrow screens
   without the page itself scrolling sideways.
+
+## How it works
+
+Three things move data through this repo: a batch build, a live Refresh, and
+a background sweep. They write the same two files.
+
+### Where the data comes from
+
+```mermaid
+flowchart TD
+  RAW["data/raw/*.json<br/>MCP pulls + python loaders"] -->|"npm run build:dataset"| BD["build_dataset.js"]
+  BD --> DS["data/tge_dataset_full.json<br/>the snapshot everything reads"]
+  DS -->|"npm run build:widget"| BW["build_widget.js"]
+  BW --> WID["tge_tracker_widget.html<br/>self-contained, opens anywhere"]
+  SW["Refresh button / auto-sweep"] -.->|"rewrites both"| DS
+  SW -.-> WID
+```
+
+The live path deliberately skips the build scripts and writes the same two
+artifacts the batch pipeline produces, so a swept widget is comparable to a
+rebuilt one.
+
+### What a refresh or sweep does
+
+```mermaid
+flowchart TD
+  BTN["Refresh button"] -->|"POST /api/refresh"| APP["app.js"]
+  TIMER["Scheduler<br/>every SWEEP_INTERVAL_MINUTES"] --> APP
+  APP -->|"rows added since the sync cursor"| AT["Airtable funded_companies"]
+  AT -->|"companies never seen before"| VM["verifyMarkets"]
+  APP -->|"sweep only: tracked rows whose<br/>round is inside the age window"| RV["reverifyRecent"]
+  RV --> VM
+  VM -->|"symbol, price, 24h volume"| CL["classify / promote"]
+  CL --> OUT["dataset + widget rewritten"]
+  OUT -.->|"GET /api/snapshot, once a minute"| BTN
+```
+
+A manual Refresh runs only the ingest half. A sweep runs both, which is what
+lets a company already in the dataset move off `TGE_ANNOUNCED` once its token
+goes live. Both share a write lock, so they can never interleave.
+
+### How a token gets verified
+
+```mermaid
+flowchart LR
+  N["candidate names"] --> CG["CoinGecko<br/>exact name or symbol"]
+  CG -->|"exact match"| OK1["verified<br/>source: coingecko"]
+  CG -->|"no match, and a CMC key is set"| CMC["CoinMarketCap<br/>cached map, ~8,000 listings"]
+  CMC -->|"one confident id + live quote"| OK2["verified<br/>source: coinmarketcap"]
+  CMC -->|"no match, ambiguous, or no quote"| UN["unmatched<br/>stays TGE_ANNOUNCED"]
+```
+
+CoinGecko runs first and its result is never overwritten, so the existing
+snapshot stays internally comparable. With no CoinMarketCap key the middle
+stage is skipped entirely and the path is simply CoinGecko → unmatched.
+
+CoinMarketCap has no name-search endpoint, so the id map is pulled once per
+process and matched locally through four tiers, strictest first:
+
+1. name, literal (case-folded, punctuation intact)
+2. name, normalized (punctuation stripped)
+3. symbol, literal
+4. symbol, normalized
+
+The first tier returning *exactly one* listing wins; a tier returning several
+is a genuine ambiguity and the name is abandoned rather than guessed. The
+literal tier exists because CoinMarketCap lists both `Bitcoin` and
+`Bitcoin.ℏ` — stripping punctuation collapses them into one ambiguous pair,
+and 136 of ~7,900 listed names collide that way.
 
 ## Setup and run
 
@@ -290,6 +402,106 @@ Airtable token — nothing is bundled with the repo:
 Without a token, everything else in the widget works exactly the same —
 Refresh just shows a message telling you it's not configured.
 
+### Market-data API keys (both optional)
+
+Refresh verifies each new token issuer against live market data. Neither
+key below is required — leave them blank and it behaves as it always has.
+
+| Variable | What it changes | Without it |
+| --- | --- | --- |
+| `COINGECKO_API_KEY` | Raises the CoinGecko rate limit, so a refresh with many new issuers finishes faster. Set `COINGECKO_API_PLAN=pro` **only** for a paid Pro/Analyst key — that switches requests to `pro-api.coingecko.com`. A free Demo key needs no plan change. | Public CoinGecko API, paced at one lookup every 1.2s. |
+| `COINMARKETCAP_API_KEY` | Adds CoinMarketCap as a **fallback**: any company CoinGecko couldn't match gets a second lookup. Rows verified this way are tagged `pv: "cmc-name-match"`. | CoinGecko only; unmatched companies stay `TGE_ANNOUNCED`. |
+
+The startup log prints the state of all three credentials, so `npm start`
+tells you exactly which sources are live.
+
+**Pulling these from 1Password.** `.env.tpl` holds vault references rather
+than values, so it is safe to commit. Regenerate a real `.env` any time —
+after a clone, or after a key rotates — with:
+
+```bash
+op inject -i .env.tpl -o .env
+```
+
+All three resolve from a single item — **`the_tie_listings_ops`** in the
+`dotenv_files` vault — so one `op inject` sets up the whole app. Two of its
+fields need a deliberate choice, both verified by probing the live APIs
+rather than inferred from their names:
+
+- **CoinGecko** — the stored key is a **Demo** key, so `COINGECKO_API_PLAN`
+  stays `demo`. Setting it to `pro` would send requests to
+  `pro-api.coingecko.com`, where this key is rejected.
+- **CoinMarketCap** — the item holds *two* working keys. The template uses
+  `COINMARKETCAP_PRO_API_KEY` (750 req/min). Its sibling
+  `COINMARKETCAP_API_KEY` also authenticates but is a 50 req/min plan.
+  Worth knowing: the 750/min key is shared with production traffic
+  (~11.5k credits already drawn on the day this was set up), so if you'd
+  rather keep a local tracker off that budget, point the template at the
+  50/min key instead — a one-line change.
+
+Note that the `Airtable` item in the Employee vault is a *different* thing:
+an SSO browser login for airtable.com, not an API token. The working PAT is
+the `AIRTABLE_API_KEY` field on `the_tie_listings_ops`.
+
+One gotcha when editing the template: `op inject` scans the whole file for
+references, comments included, so never write a literal reference URI in a
+comment or the run fails to parse.
+
+CoinGecko always runs first and its result is never overwritten, so
+turning CMC on can only add verifications — it can't silently reprice a
+company the existing snapshot already agreed on. Both sources use the
+same exact-normalized-name rule; CoinMarketCap additionally refuses any
+name that matches two or more listings (ticker collisions are common),
+since a wrong match would promote a company to `POST_TGE` with a real
+price attached. If a source errors mid-refresh, the response carries a
+`warnings` array and the widget reports "Refreshed with problems" rather
+than a clean success — an API failure and "no coin exists" look identical
+in the table otherwise.
+
+### Automatic sweeps (optional)
+
+The Refresh button only ever *adds* companies — it skips uids it already has.
+That left a real gap: a company ingested as `TGE_ANNOUNCED` stayed that way
+forever, even after its token went live. The background sweep closes it.
+
+While `npm start` is running, the server can periodically do both halves:
+ingest new Airtable rows **and** re-check existing companies whose status can
+still move. Configure it in `.env`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SWEEP_INTERVAL_MINUTES` | `60` | Minutes between sweeps. `0` disables the scheduler. |
+| `SWEEP_MAX_AGE_MONTHS` | `12` | Only re-check companies whose most recent round is this recent. |
+| `SWEEP_ON_START` | `false` | Run one sweep at startup instead of waiting a full interval. |
+
+The scheduler is **in-process**: it exists only while the server runs, and
+stops with it. There is no cron job and nothing to uninstall.
+
+Rules the sweep follows, which are what keep it safe to run unattended:
+
+- **Only two statuses can move** — `TGE_ANNOUNCED` and
+  `TOKEN_LIVE_NOT_TRADING`. A curated or already-confirmed row is never
+  touched.
+- **It never demotes.** Volume dipping below the trading bar is routine noise,
+  not a retraction, and the sweep's evidence can be weaker than whatever
+  produced the original row.
+- **Known tokens are queried by token name**, which is the link the pipeline
+  originally asserted. Only when no token is known does it fall back to the
+  company name — an *inferred* link, promoted at 0.70 rather than 0.85 and
+  tagged `pv: "name-match"` (or `"cmc-name-match"`), exactly as the batch
+  script `verify_announced_by_name.py` does.
+- **The window bounds the cost.** At 12 months that's ~109 companies, roughly
+  4 minutes of API calls per sweep on the CoinGecko demo tier. Widening it to
+  24 months roughly doubles both.
+
+Sweeps and manual refreshes share a write lock, so the two can never interleave
+and lose each other's changes.
+
+An open browser tab polls `/api/snapshot` once a minute — a ~60-byte response —
+and pulls the full dataset only when the timestamp actually moves. Your search,
+status tiles, month, and sort survive the swap; the header timestamp is what
+tells you the data underneath changed.
+
 ### Verify it's working
 
 - The header should immediately show a company count (e.g. "Showing the
@@ -351,8 +563,10 @@ from these raw fields instead):
 Instructions.py              CryptoLaunchVerifier system prompt (the methodology)
 widget_template.html         Editable widget source (data injected at build time)
 tge_tracker_widget.html      Built widget — this is the file you actually open
-app.js                       Local server (npm start / node app.js) + POST /api/refresh
-.env.example                 Copy to .env and add your Airtable token to enable live refresh
+app.js                       Local server (npm start / node app.js), background sweep scheduler,
+                             POST /api/refresh · GET /api/snapshot · GET /api/dataset
+.env.example                 Reference copy of the env vars (documentation)
+.env.tpl                     1Password reference template — op inject -i .env.tpl -o .env
 package.json                 Just the "start" script + build:* shortcuts, no dependencies
 data/
   tge_dataset_full.json      The classified dataset baked into the widget
@@ -370,7 +584,11 @@ scripts/
   build_widget.js             Injects the dataset into widget_template.html (also used live by app.js)
   classify.js                 Shared classification rules used by app.js's live /api/refresh
   airtable_client.js          Airtable REST API wrapper used by app.js (needs AIRTABLE_TOKEN)
-  coingecko_client.js         Public CoinGecko API wrapper used by app.js (exact-name-match only)
+  sweep.js                    Ingest + re-verification, shared by /api/refresh and the scheduler
+  market_verifier.js          Runs CoinGecko then CoinMarketCap for the leftovers; what app.js calls
+  market_http.js              Shared fetch helper for both market clients (429/5xx retry)
+  coingecko_client.js         CoinGecko API wrapper — keyless, or Demo/Pro with COINGECKO_API_KEY
+  coinmarketcap_client.js     CoinMarketCap fallback wrapper (needs COINMARKETCAP_API_KEY)
   merge_recent_rounds.js      Backfills round dates from a fresh unfiltered fetch
   update_from_airtable.py     Merges newly-added companies straight from the Airtable base
   load_brief_period.py        Loads one Fundraise Brief period, incl. curated Post-TGE upgrades
@@ -459,6 +677,24 @@ or re-syncing one that changed after it shipped:
   look right (Chiliz→CHZ, Agoric→BLD, Boundless→ZKC), but a company whose
   token simply shares its name with an unrelated coin could still slip
   through — confirm before relying on any single one.
+- **Background sweeps promote companies unattended.** With
+  `SWEEP_INTERVAL_MINUTES` set, status changes are written straight into the
+  dataset with no human in the loop. The guardrails are real — only
+  `TGE_ANNOUNCED` and `TOKEN_LIVE_NOT_TRADING` rows can move, nothing is ever
+  demoted, and ambiguous matches are refused — but the *inferred* half of the
+  sweep inherits every weakness of name-matching above, without the
+  spot-check. A first live sweep over 109 companies produced 14 status
+  changes, 6 through an asserted token link (0.85) and 8 through a company
+  name (0.70): among them generic single-word names like `Aria`, `Space`,
+  `LOL`, and `Axis`, plus one clear false positive — `OKX` matched a dormant
+  token literally named "OKX", not OKB, and landed as
+  `TOKEN_LIVE_NOT_TRADING`. Rows carry `pv: "name-match"` and a reduced
+  confidence so the weak link stays visible, but treat auto-promoted
+  single-word matches as unreviewed until someone looks.
+- **The sweep only re-checks a window.** At the default
+  `SWEEP_MAX_AGE_MONTHS=12` that is ~109 of the 702 companies whose status
+  could still move; the other ~593 have older rounds and are never
+  re-examined until the window is widened or a batch script is run.
 - **Curated review can disagree with this project's own earlier manual
   reasoning** — e.g. Pact Labs was reasoned through as `NO_TOKEN` in an
   early manual pass of this project (its round funds Tether's USAT
