@@ -46,7 +46,7 @@ assigned a guessed status.
 ## Current snapshot
 
 - **5,382 companies** indexed — searchable by name, token, or category
-- Snapshot generated: `2026-08-17T13:54:25.919Z`
+- Snapshot generated: `2026-08-17T13:55:40.461Z`
 - Sources: TIE Terminal (Fundraise Brief) fundraising-rounds dataset + CoinGecko live market data
 - Of the **880 coins** the Fundraise Brief links to a company, **772** were independently confirmed live on CoinGecko and **108** could not be matched to any CoinGecko listing.
 

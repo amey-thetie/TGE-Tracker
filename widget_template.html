@@ -220,7 +220,7 @@
     <input type="month" id="briefMonth" aria-label="Pick a Fundraise Brief month" />
     <button class="load-btn" id="loadBriefBtn" type="button">Load →</button>
     <span class="load-status" id="loadStatus"></span>
-    <button class="refresh-btn" id="refreshBtn" type="button" title="Fetches companies added to the Fundraise Brief since this snapshot and classifies them live (requires running via `npm start` with an Airtable token configured — see README). Falls back to a plain page reload if no local server is available.">
+    <button class="refresh-btn" id="refreshBtn" type="button" title="Fetches companies added to the Fundraise Brief since this snapshot and classifies them live (requires running via `npm start` with an Airtable token configured — see README). Requires the local server — opened from a file:// path or a hosted page it will say so rather than silently doing nothing.">
       <span class="spin">↻</span> Refresh
     </button>
   </div>

@@ -28,6 +28,37 @@ const MOVABLE = new Set(["TGE_ANNOUNCED", "TOKEN_LIVE_NOT_TRADING"]);
 
 const ACTIVE_VOLUME_THRESHOLD = 1000; // same bar the rest of the pipeline uses
 
+// A company-name match is only trustworthy when something independently says
+// this company actually ran a token event. Without that, a generic name
+// collides with an unrelated coin and the sweep writes a wrong row — this is
+// how "OKX" matched a dormant token literally named OKX, and how "Axis"
+// matched MAXIS in the earlier bulk pass.
+//
+// The corroboration used here is the same one that pass validated against:
+// an explicitly token-sale-typed round. In that pass 180 of 183 matches were
+// corroborated this way, and reverting the 3 that weren't removed the only
+// bad match. An asserted token name (c.tn) needs none of this — it is the
+// link the pipeline already established, and stays fully automatic.
+const TOKEN_ROUND_RE = /TOKEN|ICO|IEO|IDO/;
+const MIN_INFERRED_NAME_LENGTH = 3;
+
+// A promotion via company name writes c.tn = <company name>. Without this set,
+// the NEXT sweep would see c.tn populated, treat the row as an asserted link,
+// skip the corroboration guard entirely and score it 0.85 — laundering an
+// inferred match into a confident one over successive runs. The pv tag is the
+// durable record of how the link was actually established, so trust that.
+const INFERRED_PROVENANCE = new Set(["name-match", "cmc-name-match"]);
+
+function isInferredLink(c) {
+  return !c.tn || INFERRED_PROVENANCE.has(c.pv);
+}
+
+function canPromoteByCompanyName(c) {
+  const name = String(c.n || "").replace(/[^a-z0-9]/gi, "");
+  if (name.length < MIN_INFERRED_NAME_LENGTH) return false;
+  return TOKEN_ROUND_RE.test(String(c.rt || "").toUpperCase());
+}
+
 // Confidence for a promotion whose company->token link is INFERRED from a
 // name match rather than asserted by a coin_uid. Deliberately below the 0.85
 // the coin_uid path earns; mirrors scripts/verify_announced_by_name.py.
@@ -157,7 +188,14 @@ function monthsAgoIso(months) {
 // cannot tell how old it is, and guessing would burn the budget on the tail.
 function selectRecentCandidates(dataset, monthsBack) {
   const cutoff = monthsAgoIso(monthsBack);
-  return dataset.companies.filter((c) => MOVABLE.has(c.s) && c.rd && c.rd >= cutoff);
+  return dataset.companies.filter((c) => {
+    if (!MOVABLE.has(c.s) || !c.rd || c.rd < cutoff) return false;
+    // Rows with an asserted token name always qualify. Rows without one can
+    // only be resolved by company name, so skip them unless that match would
+    // be corroborated — this both prevents the wrong-row case and avoids
+    // spending rate limit on a lookup whose result we would refuse anyway.
+    return isInferredLink(c) ? canPromoteByCompanyName(c) : true;
+  });
 }
 
 async function reverifyRecent(dataset, { marketKeys, monthsBack = 12 }) {
@@ -191,7 +229,11 @@ async function reverifyRecent(dataset, { marketKeys, monthsBack = 12 }) {
     // routine noise, not a retraction of the launch.
     if (c.s === "POST_TGE" && nextStatus !== "POST_TGE") continue;
 
-    const inferred = !c.tn; // matched on company name, not on a known token
+    const inferred = isInferredLink(c); // company-name link, incl. one a prior sweep wrote
+    // Belt-and-braces: selectRecentCandidates already filters these out, but
+    // keep the invariant at the point of write so no future caller can
+    // promote on an uncorroborated name match by accident.
+    if (inferred && !canPromoteByCompanyName(c)) continue;
     const before = c.s;
 
     if (before !== nextStatus) {
