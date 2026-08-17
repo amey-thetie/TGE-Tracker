@@ -30,16 +30,37 @@ function resolveTier(apiKey, plan) {
   return { base: PUBLIC_BASE, headers: { "x-cg-demo-api-key": apiKey }, delayMs: DELAY_MS.demo, tier: "demo" };
 }
 
+// Resolves a query to at most ONE CoinGecko id, refusing anything ambiguous.
+//
+// Two rules matter here, and dropping either produces wrong rows:
+//
+//  1. Name before symbol. A coin NAME equal to the query is a much stronger
+//     signal than a 3-4 letter SYMBOL that happens to collide with it. These
+//     were previously checked in a single pass, so a symbol collision could
+//     win over a real name match purely on result ordering.
+//
+//  2. Refuse ties. This used to take .find() — the FIRST match — so a query
+//     resolving to several distinct coins silently picked one by result
+//     order. CoinGecko lists two separate coins named "Solomon" (SOLO and
+//     SOL777), and the sweep promoted a company on a coin flip between them.
+//     The CoinMarketCap client already abandons a tier that resolves to more
+//     than one listing; this now matches, so the two sources agree.
 async function findExactCoinGeckoId(name, tier) {
   const data = await fetchJson(`${tier.base}/search?query=${encodeURIComponent(name)}`, {
     headers: tier.headers,
     label: "CoinGecko",
   });
   const target = normalize(name);
-  const match = (data.coins || []).find(
-    (c) => normalize(c.name) === target || normalize(c.symbol) === target
-  );
-  return match ? match.id : null;
+  const coins = data.coins || [];
+
+  for (const key of ["name", "symbol"]) {
+    const ids = [...new Set(
+      coins.filter((c) => normalize(c[key]) === target).map((c) => c.id)
+    )];
+    if (ids.length === 1) return ids[0];
+    if (ids.length > 1) return null; // ambiguous — refuse rather than guess
+  }
+  return null;
 }
 
 async function fetchMarkets(ids, tier) {
