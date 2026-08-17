@@ -79,6 +79,7 @@ def main():
     by_uid = {c["u"]: c for c in dataset["companies"]}
 
     added, backfilled_dates, skipped_no_uid_already_seen = 0, 0, 0
+    promoted_from_synthetic = 0
     new_entries = []
 
     for record in records:
@@ -90,6 +91,18 @@ def main():
         company_uid = decoded.get("company_uid")
         last_round_date = extract_last_round_date(decoded)
         is_token_issuer = decoded.get("token_issuer") == "TRUE"
+
+        # A company first seen before TIE Terminal assigned it a company_uid was
+        # stored under a synthetic airtable_<recordId> key. Once the real uid
+        # exists, keying only on that uid would add a SECOND entry for the same
+        # Airtable record - a silent duplicate. Drop the synthetic twin first:
+        # same record ID means same company, not a name collision.
+        if company_uid:
+            synthetic_key = f"airtable_{record['id']}"
+            twin = by_uid.pop(synthetic_key, None)
+            if twin is not None:
+                dataset["companies"].remove(twin)
+                promoted_from_synthetic += 1
 
         if company_uid and company_uid in by_uid:
             # Already tracked - only backfill the round date display if this
@@ -146,6 +159,7 @@ def main():
     if new_entries:
         print("  " + "\n  ".join(new_entries))
     print(f"Existing companies with round date backfilled: {backfilled_dates}")
+    print(f"Synthetic airtable_* entries merged into a real company_uid: {promoted_from_synthetic}")
     print(f"New dataset total: {dataset['stats']['total']}")
     print(f"Wrote {DATASET_PATH}")
     print("Next: node scripts/build_widget.js")

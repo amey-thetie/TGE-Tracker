@@ -75,10 +75,29 @@ async function ingestNewCompanies(dataset, { token, marketKeys }) {
 
   const byUid = new Map(dataset.companies.map((c) => [c.u, c]));
   const candidates = [];
+  let promotedFromSynthetic = 0;
   for (const r of records) {
     const f = r.fields || {};
     const name = f.funded_company;
     if (!name) continue;
+
+    // A company first seen before TIE Terminal assigned it a company_uid was
+    // stored under a synthetic airtable_<recordId> key. Once the real uid
+    // exists, keying only on that uid would add a SECOND entry for the same
+    // Airtable record — a silent duplicate (this actually happened to
+    // Attestable and TradeZero). Drop the synthetic twin first: the same
+    // Airtable record ID means the same company, not a name collision.
+    if (f.company_uid) {
+      const syntheticKey = `airtable_${r.id}`;
+      const twin = byUid.get(syntheticKey);
+      if (twin) {
+        const idx = dataset.companies.indexOf(twin);
+        if (idx !== -1) dataset.companies.splice(idx, 1);
+        byUid.delete(syntheticKey);
+        promotedFromSynthetic++;
+      }
+    }
+
     const uid = f.company_uid || `airtable_${r.id}`;
     if (byUid.has(uid)) continue; // already tracked — reverifyRecent handles those
     candidates.push({
@@ -122,7 +141,7 @@ async function ingestNewCompanies(dataset, { token, marketKeys }) {
   // leaves it untouched, so the next run re-reads the same window.
   dataset.last_airtable_sync = new Date().toISOString();
 
-  return { added, checked: records.length, warnings };
+  return { added, promotedFromSynthetic, checked: records.length, warnings };
 }
 
 // --- re-verification ----------------------------------------------------

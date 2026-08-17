@@ -169,6 +169,7 @@ async function handleRefresh(req, res) {
 
     sendJson(res, 200, {
       added: result.added,
+      promotedFromSynthetic: result.promotedFromSynthetic || 0,
       checked: result.checked,
       total: dataset.companies.length,
       generated_at: result.generated_at,

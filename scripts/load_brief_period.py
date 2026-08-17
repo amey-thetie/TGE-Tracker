@@ -146,6 +146,7 @@ def main():
         }
 
     added, upgraded_to_post_tge, backfilled_dates = 0, 0, 0
+    promoted_from_round_type = 0
 
     for row in latest_by_uid.values():
         existing = by_uid.get(row["uid"])
@@ -164,6 +165,17 @@ def main():
                 backfilled_dates += 1
             if not existing.get("c") and row["category"]:
                 existing["c"] = row["category"]
+
+            # A company can sit at UNKNOWN purely because it arrived via the
+            # funded_companies fast-path, which carries no round type. Once this
+            # period's rounds tell us it actually ran a token sale/ICO/IEO/IDO,
+            # that's hard evidence of a TGE event and UNKNOWN is simply wrong.
+            # Promote it. Only ever UNKNOWN -> TGE_ANNOUNCED; never downgrade a
+            # status that was reached with stronger evidence.
+            if existing["s"] == "UNKNOWN" and TOKEN_ROUND_RE.search(row["round_type"].upper()):
+                existing["s"] = "TGE_ANNOUNCED"
+                existing["f"] = 0.35
+                promoted_from_round_type += 1
             continue
 
         if row["post_tge"]:
@@ -206,6 +218,7 @@ def main():
     print(f"New companies added: {added}")
     print(f"Existing companies upgraded to POST_TGE via curated flag: {upgraded_to_post_tge}")
     print(f"Existing companies with round data backfilled: {backfilled_dates}")
+    print(f"UNKNOWN -> TGE_ANNOUNCED via newly-learned token-sale round type: {promoted_from_round_type}")
     print(f"New dataset total: {dataset['stats']['total']}")
     print(f"Wrote {DATASET_PATH}")
     print("Next: node scripts/build_widget.js")
