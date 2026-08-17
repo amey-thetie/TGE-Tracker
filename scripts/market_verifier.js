@@ -19,7 +19,7 @@
 const coingecko = require("./coingecko_client");
 const coinmarketcap = require("./coinmarketcap_client");
 
-async function verifyMarkets(names, { coingeckoKey, coingeckoPlan, coinmarketcapKey } = {}) {
+async function verifyMarkets(names, { coingeckoKey, coingeckoPlan, coinmarketcapKey, symbolHints } = {}) {
   const verified = {};
   const warnings = [];
   const counts = { coingecko: 0, coinmarketcap: 0, unmatched: 0 };
@@ -27,7 +27,7 @@ async function verifyMarkets(names, { coingeckoKey, coingeckoPlan, coinmarketcap
   if (!names.length) return { verified, warnings, counts };
 
   try {
-    const cg = await coingecko.verifyByExactName(names, { apiKey: coingeckoKey, plan: coingeckoPlan });
+    const cg = await coingecko.verifyByExactName(names, { apiKey: coingeckoKey, plan: coingeckoPlan, symbolHints });
     for (const [name, market] of Object.entries(cg)) {
       verified[name] = { ...market, source: "coingecko" };
       counts.coingecko++;

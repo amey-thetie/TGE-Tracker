@@ -210,7 +210,18 @@ async function reverifyRecent(dataset, { marketKeys, monthsBack = 12 }) {
   const queryFor = (c) => c.tn || c.n;
   const queries = [...new Set(candidates.map(queryFor))];
 
-  const { verified, warnings } = await verifyMarkets(queries, marketKeys);
+  // Several real tokens share a name (two "Kite", three "Genius"), and the
+  // client refuses an ambiguous name rather than guessing. For rows where the
+  // pipeline already resolved a ticker, pass it as a tie-breaker so those keep
+  // re-verifying instead of freezing forever. Only offered where the symbol was
+  // established by an asserted link — an inferred row's symbol came from the
+  // same weak match we are trying to re-check, so it would just confirm itself.
+  const symbolHints = {};
+  for (const c of candidates) {
+    if (c.ts && !isInferredLink(c)) symbolHints[queryFor(c)] = c.ts;
+  }
+
+  const { verified, warnings } = await verifyMarkets(queries, { ...marketKeys, symbolHints });
 
   let promoted = 0;
   let updated = 0;

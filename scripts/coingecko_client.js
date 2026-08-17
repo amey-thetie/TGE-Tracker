@@ -45,20 +45,32 @@ function resolveTier(apiKey, plan) {
 //     SOL777), and the sweep promoted a company on a coin flip between them.
 //     The CoinMarketCap client already abandons a tier that resolves to more
 //     than one listing; this now matches, so the two sources agree.
-async function findExactCoinGeckoId(name, tier) {
+// symbolHint: a ticker the pipeline has ALREADY resolved for this row. Several
+// real tokens share a name — CoinGecko lists two coins named "Kite" and three
+// named "Genius" — so refusing every ambiguous name would permanently freeze
+// re-verification for rows whose coin we in fact already identified. When a
+// hint is supplied it narrows the tie; it never widens a match, so a hint that
+// matches nothing still resolves to null rather than guessing.
+async function findExactCoinGeckoId(name, tier, symbolHint) {
   const data = await fetchJson(`${tier.base}/search?query=${encodeURIComponent(name)}`, {
     headers: tier.headers,
     label: "CoinGecko",
   });
   const target = normalize(name);
+  const hint = symbolHint ? normalize(symbolHint) : null;
   const coins = data.coins || [];
 
   for (const key of ["name", "symbol"]) {
-    const ids = [...new Set(
-      coins.filter((c) => normalize(c[key]) === target).map((c) => c.id)
-    )];
+    let tierMatches = coins.filter((c) => normalize(c[key]) === target);
+    let ids = [...new Set(tierMatches.map((c) => c.id))];
     if (ids.length === 1) return ids[0];
-    if (ids.length > 1) return null; // ambiguous — refuse rather than guess
+    if (ids.length > 1) {
+      if (!hint) return null; // ambiguous with nothing to break the tie — refuse
+      const narrowed = [...new Set(
+        tierMatches.filter((c) => normalize(c.symbol) === hint).map((c) => c.id)
+      )];
+      return narrowed.length === 1 ? narrowed[0] : null; // still tied -> refuse
+    }
   }
   return null;
 }
@@ -81,15 +93,17 @@ async function fetchMarkets(ids, tier) {
 }
 
 // names: array of candidate names (e.g. company names) to check.
-// opts: { apiKey, plan } — both optional; omitting apiKey uses the public API.
+// opts: { apiKey, plan, symbolHints } — all optional; omitting apiKey uses the
+// public API. symbolHints maps a query name to an already-resolved ticker,
+// used only to break a tie between same-named coins.
 // Returns a map keyed by the ORIGINAL name -> {symbol, price_usd, market_cap_usd, volume_24h_usd}
 // for names that matched exactly; unmatched names are simply absent.
-async function verifyByExactName(names, { apiKey, plan } = {}) {
+async function verifyByExactName(names, { apiKey, plan, symbolHints } = {}) {
   const tier = resolveTier(apiKey, plan);
   const idByName = {};
   for (const name of names) {
     try {
-      const id = await findExactCoinGeckoId(name, tier);
+      const id = await findExactCoinGeckoId(name, tier, symbolHints && symbolHints[name]);
       if (id) idByName[name] = id;
     } catch {
       // ignore individual lookup failures, treat as unmatched
